@@ -1,0 +1,29 @@
+{
+  "name": "social-media-tracker",
+  "version": "1.0.0",
+  "description": "Automated weekly social media analytics with sentiment analysis",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test src/**/*.test.js"
+  },
+  "keywords": [
+    "social-media",
+    "analytics",
+    "apify",
+    "sentiment-analysis"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "apify-client": "^2.9.3",
+    "dotenv": "^16.4.5",
+    "googleapis": "^140.0.1",
+    "nodemailer": "^6.9.14",
+    "openai": "^4.52.7"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
