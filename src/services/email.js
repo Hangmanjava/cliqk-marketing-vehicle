@@ -1,35 +1,34 @@
 import nodemailer from 'nodemailer';
+import { google } from 'googleapis';
+import { getAuthClient } from './google-auth.js';
 
 /**
- * Google Workspace email service for sending reports
- * Configured for mycliqk.com domain
+ * Email service using Google OAuth2
+ * Configured for mycliqk.com Google Workspace
  */
 
 let transporter = null;
 
 /**
- * Initialize Google Workspace email transporter
- * For mycliqk.com Google Workspace accounts
+ * Initialize email transporter with OAuth2
  */
-export function initEmailService(
-  user = process.env.GMAIL_USER,
-  appPassword = process.env.GMAIL_APP_PASSWORD
-) {
-  if (!user || !appPassword) {
-    throw new Error('GMAIL_USER and GMAIL_APP_PASSWORD are required');
-  }
+export async function initEmailService() {
+  const auth = getAuthClient();
+  const accessToken = await auth.getAccessToken();
 
-  // Google Workspace uses the same SMTP settings as Gmail
   transporter = nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 465,
-    secure: true,
+    service: 'gmail',
     auth: {
-      user,
-      pass: appPassword,
+      type: 'OAuth2',
+      user: process.env.GMAIL_USER || 'shawn@mycliqk.com',
+      clientId: auth._clientId,
+      clientSecret: auth._clientSecret,
+      refreshToken: auth.credentials.refresh_token,
+      accessToken: accessToken.token,
     },
   });
 
+  console.log('Email service initialized with OAuth2');
   return transporter;
 }
 
@@ -38,7 +37,7 @@ export function initEmailService(
  */
 function getTransporter() {
   if (!transporter) {
-    initEmailService();
+    throw new Error('Email service not initialized. Call initEmailService first.');
   }
   return transporter;
 }
@@ -66,14 +65,12 @@ export async function sendReportEmail(report, options = {}) {
   }
 
   const weekDate = getWeekDateString();
-
-  // Convert markdown to simple HTML
   const htmlReport = convertMarkdownToHtml(report);
 
   const mailOptions = {
-    from: process.env.GMAIL_USER,
+    from: process.env.GMAIL_USER || 'shawn@mycliqk.com',
     to: recipientList.join(', '),
-    subject: `📊 Weekly Social Media Report - ${weekDate}`,
+    subject: `Weekly Social Media Report - ${weekDate}`,
     text: report,
     html: htmlReport,
   };
@@ -91,30 +88,21 @@ export async function sendReportEmail(report, options = {}) {
 
 /**
  * Convert markdown to simple HTML
- * @param {string} markdown - Markdown content
- * @returns {string} HTML content
  */
 function convertMarkdownToHtml(markdown) {
   let html = markdown
-    // Headers
     .replace(/^### (.+)$/gm, '<h3>$1</h3>')
     .replace(/^## (.+)$/gm, '<h2>$1</h2>')
     .replace(/^# (.+)$/gm, '<h1>$1</h1>')
-    // Bold
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    // Italic
     .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    // Lists
     .replace(/^• (.+)$/gm, '<li>$1</li>')
     .replace(/^- (.+)$/gm, '<li>$1</li>')
     .replace(/^\d+\. (.+)$/gm, '<li>$1</li>')
-    // Links
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>')
-    // Line breaks
     .replace(/\n\n/g, '</p><p>')
     .replace(/\n/g, '<br>');
 
-  // Wrap in basic HTML structure with styling
   return `
 <!DOCTYPE html>
 <html>
@@ -136,7 +124,6 @@ function convertMarkdownToHtml(markdown) {
     .positive { color: #28a745; }
     .negative { color: #dc3545; }
     .neutral { color: #6c757d; }
-    code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; }
   </style>
 </head>
 <body>
@@ -148,7 +135,6 @@ function convertMarkdownToHtml(markdown) {
 
 /**
  * Get formatted date string for the current week
- * @returns {string} Formatted date string
  */
 function getWeekDateString() {
   const now = new Date();
@@ -158,7 +144,6 @@ function getWeekDateString() {
 
 /**
  * Verify email configuration is working
- * @returns {Promise<boolean>} True if configuration is valid
  */
 export async function verifyEmailConfig() {
   try {

@@ -42,7 +42,7 @@ async function main() {
     initApifyClient();
     await initGoogleSheets();
     initOpenAI();
-    initEmailService();
+    await initEmailService();
 
     // Initialize sheet headers if needed
     await initializeSheetHeaders();
