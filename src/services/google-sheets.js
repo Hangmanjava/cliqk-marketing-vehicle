@@ -1,40 +1,20 @@
 import { google } from 'googleapis';
+import { initGoogleAuth, getAuthClient } from './google-auth.js';
 
 /**
  * Google Sheets API integration for storing and retrieving data
  */
 
 let sheets = null;
-let auth = null;
 
 /**
- * Initialize Google Sheets client with service account credentials
+ * Initialize Google Sheets client
  */
-export async function initGoogleSheets(credentials = process.env.GOOGLE_CREDENTIALS) {
-  if (!credentials) {
-    throw new Error('GOOGLE_CREDENTIALS is required');
-  }
-
-  // Credentials can be base64 encoded JSON or raw JSON
-  let credentialsJson;
-  try {
-    // Try base64 decode first
-    credentialsJson = JSON.parse(Buffer.from(credentials, 'base64').toString('utf-8'));
-  } catch {
-    // If that fails, try parsing as raw JSON
-    try {
-      credentialsJson = JSON.parse(credentials);
-    } catch {
-      throw new Error('Invalid GOOGLE_CREDENTIALS format - must be base64 encoded or raw JSON');
-    }
-  }
-
-  auth = new google.auth.GoogleAuth({
-    credentials: credentialsJson,
-    scopes: ['https://www.googleapis.com/auth/spreadsheets'],
-  });
-
+export async function initGoogleSheets() {
+  await initGoogleAuth();
+  const auth = getAuthClient();
   sheets = google.sheets({ version: 'v4', auth });
+  console.log('Google Sheets client initialized');
   return sheets;
 }
 

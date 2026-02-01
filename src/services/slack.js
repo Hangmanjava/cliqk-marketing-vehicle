@@ -1,44 +1,84 @@
 /**
- * Slack webhook service for sending notifications
+ * Slack service for sending notifications
+ * Supports both webhook URLs and bot tokens
  */
 
 /**
- * Send a message to Slack via webhook
+ * Send a message to Slack
+ * Supports webhook URL or bot token authentication
  * @param {string} message - The message content
  * @param {object} options - Additional options
  */
 export async function sendSlackMessage(message, options = {}) {
   const webhookUrl = options.webhookUrl || process.env.SLACK_WEBHOOK_URL;
+  const botToken = options.botToken || process.env.SLACK_BOT_TOKEN;
+  const channel = options.channel || process.env.SLACK_CHANNEL || '#general';
 
-  if (!webhookUrl) {
-    throw new Error('SLACK_WEBHOOK_URL is required');
+  // Prefer webhook if available, otherwise use bot token
+  if (webhookUrl) {
+    return sendViaWebhook(webhookUrl, message, options);
+  } else if (botToken) {
+    return sendViaBotToken(botToken, channel, message, options);
+  } else {
+    throw new Error('SLACK_WEBHOOK_URL or SLACK_BOT_TOKEN is required');
   }
+}
 
+/**
+ * Send message via webhook
+ */
+async function sendViaWebhook(webhookUrl, message, options = {}) {
   const payload = {
     text: message,
     ...options.additionalFields,
   };
 
-  try {
-    const response = await fetch(webhookUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-    });
+  const response = await fetch(webhookUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Slack webhook failed: ${response.status} - ${errorText}`);
-    }
-
-    console.log('Slack message sent successfully');
-    return true;
-  } catch (error) {
-    console.error('Failed to send Slack message:', error.message);
-    throw error;
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Slack webhook failed: ${response.status} - ${errorText}`);
   }
+
+  console.log('Slack message sent via webhook');
+  return true;
+}
+
+/**
+ * Send message via bot token (Slack API)
+ */
+async function sendViaBotToken(botToken, channel, message, options = {}) {
+  const payload = {
+    channel,
+    text: message,
+  };
+
+  // Add blocks if provided
+  if (options.additionalFields?.blocks) {
+    payload.blocks = options.additionalFields.blocks;
+  }
+
+  const response = await fetch('https://slack.com/api/chat.postMessage', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${botToken}`,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const result = await response.json();
+
+  if (!result.ok) {
+    throw new Error(`Slack API error: ${result.error}`);
+  }
+
+  console.log('Slack message sent via bot token');
+  return true;
 }
 
 /**
@@ -47,21 +87,17 @@ export async function sendSlackMessage(message, options = {}) {
  * @param {string} sheetUrl - URL to the Google Sheet
  */
 export async function sendSlackReport(report, sheetUrl = '') {
-  // Slack uses mrkdwn format, which is slightly different from markdown
-  // Convert some common patterns
+  // Slack uses mrkdwn format
   const slackFormatted = report
-    // Convert markdown bold to Slack bold
     .replace(/\*\*(.+?)\*\*/g, '*$1*')
-    // Convert markdown links to Slack links
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<$2|$1>');
 
-  // Build the message with blocks for better formatting
   const blocks = [
     {
       type: 'header',
       text: {
         type: 'plain_text',
-        text: '📊 Weekly Social Media Report',
+        text: 'Weekly Social Media Report',
         emoji: true,
       },
     },
@@ -74,13 +110,12 @@ export async function sendSlackReport(report, sheetUrl = '') {
     },
   ];
 
-  // Add link to Google Sheet if provided
   if (sheetUrl) {
     blocks.push({
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: `📄 <${sheetUrl}|View Full Data in Google Sheets>`,
+        text: `<${sheetUrl}|View Full Data in Google Sheets>`,
       },
     });
   }
@@ -102,27 +137,21 @@ export async function sendSlackReport(report, sheetUrl = '') {
 
 /**
  * Send a simple notification to Slack
- * @param {string} title - Notification title
- * @param {string} message - Notification message
- * @param {string} type - Type: 'success', 'warning', 'error'
  */
 export async function sendSlackNotification(title, message, type = 'info') {
   const emojis = {
-    success: '✅',
-    warning: '⚠️',
-    error: '❌',
-    info: 'ℹ️',
+    success: ':white_check_mark:',
+    warning: ':warning:',
+    error: ':x:',
+    info: ':information_source:',
   };
 
   const emoji = emojis[type] || emojis.info;
-
   await sendSlackMessage(`${emoji} *${title}*\n${message}`);
 }
 
 /**
  * Send error notification to Slack
- * @param {Error} error - The error object
- * @param {string} context - Context about what was happening
  */
 export async function sendSlackError(error, context = '') {
   const message = [
@@ -134,7 +163,6 @@ export async function sendSlackError(error, context = '') {
   try {
     await sendSlackNotification('Report Generation Failed', message, 'error');
   } catch (slackError) {
-    // Don't throw if Slack notification fails
     console.error('Failed to send Slack error notification:', slackError.message);
   }
 }
