@@ -1,10 +1,10 @@
-import { runActorWithRetry, ACTOR_IDS } from '../services/apify-client.js';
+import { runActorWithRetry } from '../services/apify-client.js';
 import { accounts } from '../config/accounts.js';
 import {
   getRecentVideos,
   transcribeVideos,
   cleanupOutput,
-} from '../services/tiktok-transcribe.js';
+} from '../services/video-transcribe.js';
 import {
   analyzeVideos,
   summarizeAccountAnalysis,
@@ -12,7 +12,25 @@ import {
 
 /**
  * Scrape TikTok profile data using Apify + video transcription & analysis
+ * Actor: clockworks/tiktok-scraper
  */
+
+const ACTOR_ID = 'clockworks/tiktok-scraper';
+
+// Filter posts from the last 7 days
+const DAYS_TO_SCRAPE = 7;
+
+/**
+ * Check if a timestamp is within the last N days
+ */
+function isWithinDays(timestamp, days) {
+  if (!timestamp) return false;
+  // TikTok uses Unix timestamps (seconds)
+  const postDate = new Date(timestamp * 1000);
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
+  return postDate >= cutoff;
+}
 
 /**
  * Scrape all TikTok accounts with video analysis
@@ -26,39 +44,52 @@ export async function scrapeTikTok() {
     try {
       console.log(`Scraping TikTok: @${account.handle}`);
 
-      // Get profile data via Apify
-      const data = await runActorWithRetry(ACTOR_IDS.tiktok, {
+      const data = await runActorWithRetry(ACTOR_ID, {
         profiles: [account.handle],
-        resultsPerPage: 12,
+        resultsPerPage: 30, // Get more posts to filter by date
         shouldDownloadVideos: false,
         shouldDownloadCovers: false,
       });
 
-      let profileResult;
-
       if (data && data.length > 0) {
-        // Find profile data
-        const profileData = data.find(item => item.authorMeta) || data[0];
+        // Get author info from first item
+        const authorMeta = data[0]?.authorMeta || {};
 
-        // Get video data
-        const videos = data.filter(item => item.playCount !== undefined);
-        const totalViews = videos.reduce((sum, video) => sum + (video.playCount || 0), 0);
-        const totalLikes = videos.reduce((sum, video) => sum + (video.diggCount || 0), 0);
-        const totalComments = videos.reduce((sum, video) => sum + (video.commentCount || 0), 0);
-        const totalShares = videos.reduce((sum, video) => sum + (video.shareCount || 0), 0);
+        // Filter videos from the last 7 days
+        const recentVideos = data.filter(item =>
+          isWithinDays(item.createTime || item.createTimeISO, DAYS_TO_SCRAPE)
+        );
 
-        // Collect video descriptions for sentiment analysis
-        const postCaptions = videos
-          .map(video => video.text || '')
-          .filter(text => text.length > 0);
+        console.log(`  📅 Found ${recentVideos.length}/${data.length} videos in last ${DAYS_TO_SCRAPE} days`);
 
-        profileResult = {
+        // Calculate totals from recent videos
+        let totalPlays = 0;
+        let totalLikes = 0;
+        let totalComments = 0;
+        let totalShares = 0;
+
+        const postCaptions = [];
+
+        for (const item of recentVideos) {
+          if (item.playCount !== undefined) {
+            totalPlays += item.playCount || 0;
+            totalLikes += item.diggCount || 0;
+            totalComments += item.commentCount || 0;
+            totalShares += item.shareCount || 0;
+
+            if (item.text) {
+              postCaptions.push(item.text);
+            }
+          }
+        }
+
+        results.push({
           platform: 'tiktok',
           handle: account.handle,
           url: account.url,
-          followers: profileData.authorMeta?.fans || 0,
-          following: profileData.authorMeta?.following || 0,
-          impressions: totalViews,
+          followers: authorMeta.fans || 0,
+          following: authorMeta.following || 0,
+          impressions: totalPlays, // TikTok plays = impressions
           engagement: totalLikes + totalComments + totalShares,
           likes: totalLikes,
           comments: totalComments,
@@ -66,23 +97,25 @@ export async function scrapeTikTok() {
           postCaptions,
           audienceComments: [],
           scrapedAt: new Date().toISOString(),
-        };
+        });
+
+        console.log(`  ✓ ${account.handle}: ${totalPlays.toLocaleString()} plays, ${authorMeta.fans?.toLocaleString()} followers`);
+
+        // Analyze videos for hooks/virality
+        try {
+          const accountAnalysis = await analyzeAccountVideos(account);
+          if (accountAnalysis) {
+            videoAnalyses.push(accountAnalysis);
+          }
+        } catch (e) {
+          console.log(`  ⚠ Video analysis skipped: ${e.message}`);
+        }
       } else {
-        profileResult = createEmptyResult('tiktok', account);
+        results.push(createEmptyResult(account));
       }
-
-      results.push(profileResult);
-
-      // Now get recent videos and analyze them
-      console.log(`  Fetching recent videos for @${account.handle}...`);
-      const accountAnalysis = await analyzeAccountVideos(account);
-      if (accountAnalysis) {
-        videoAnalyses.push(accountAnalysis);
-      }
-
     } catch (error) {
-      console.error(`Failed to scrape TikTok @${account.handle}:`, error.message);
-      results.push(createEmptyResult('tiktok', account, error.message));
+      console.error(`  ✗ Failed @${account.handle}:`, error.message);
+      results.push(createEmptyResult(account, error.message));
     }
   }
 
@@ -101,67 +134,45 @@ export async function scrapeTikTok() {
 
 /**
  * Analyze videos for a single TikTok account
- * @param {object} account - Account config
- * @returns {Promise<object>} Account video analysis summary
  */
 async function analyzeAccountVideos(account) {
   try {
-    // Get recent videos (last 7 days)
-    console.log(`  Getting recent videos for @${account.handle}...`);
     const recentVideos = await getRecentVideos(account.url, 5);
 
     if (recentVideos.length === 0) {
-      console.log(`  No recent videos found for @${account.handle}`);
-      return summarizeAccountAnalysis(account.handle, []);
+      return summarizeAccountAnalysis(account.handle, [], 'tiktok');
     }
 
-    console.log(`  Found ${recentVideos.length} recent videos, transcribing...`);
+    console.log(`    Analyzing ${recentVideos.length} videos for @${account.handle}...`);
 
-    // Transcribe videos
     const transcriptions = await transcribeVideos(recentVideos, { verbose: false });
 
-    // Merge transcriptions with video data
     const videosWithTranscripts = recentVideos.map((video, i) => ({
       ...video,
       ...transcriptions[i],
+      platform: 'tiktok',
     }));
 
-    // Filter to only videos with transcripts
     const transcribedVideos = videosWithTranscripts.filter(v => v.transcript);
-    console.log(`  Transcribed ${transcribedVideos.length}/${recentVideos.length} videos`);
 
     if (transcribedVideos.length === 0) {
-      return summarizeAccountAnalysis(account.handle, []);
+      console.log(`    No transcripts available for @${account.handle}'s videos`);
+      return summarizeAccountAnalysis(account.handle, [], 'tiktok');
     }
 
-    // Analyze hook and virality
-    console.log(`  Analyzing hooks and virality...`);
+    console.log(`    Transcribed ${transcribedVideos.length}/${recentVideos.length} videos`);
+
     const analyses = await analyzeVideos(transcribedVideos);
-
-    // Generate summary
-    return summarizeAccountAnalysis(account.handle, analyses);
-
+    return summarizeAccountAnalysis(account.handle, analyses, 'tiktok');
   } catch (error) {
-    console.error(`  Video analysis failed for @${account.handle}:`, error.message);
-    return summarizeAccountAnalysis(account.handle, []);
+    console.error(`    Video analysis failed for @${account.handle}:`, error.message);
+    return summarizeAccountAnalysis(account.handle, [], 'tiktok');
   }
 }
 
-/**
- * Legacy function for backwards compatibility
- * Returns just the profile data
- */
-export async function scrapeTikTokProfiles() {
-  const result = await scrapeTikTok();
-  return result.profileData;
-}
-
-/**
- * Create an empty result for failed scrapes
- */
-function createEmptyResult(platform, account, error = null) {
+function createEmptyResult(account, error = null) {
   return {
-    platform,
+    platform: 'tiktok',
     handle: account.handle,
     url: account.url,
     followers: 0,

@@ -13,6 +13,7 @@ import {
 import { initOpenAI, analyzeAllSentiment, calculateAggregateSentiment, compareSentiment } from './services/sentiment.js';
 import { initEmailService, sendReportEmail } from './services/email.js';
 import { sendSlackReport, sendSlackError } from './services/slack.js';
+import { saveAndDeploy } from './services/vercel-deploy.js';
 
 import { scrapeInstagram } from './scrapers/instagram.js';
 import { scrapeTikTok } from './scrapers/tiktok.js';
@@ -34,7 +35,7 @@ async function main() {
   console.log(`Started at: ${new Date().toISOString()}`);
   console.log('='.repeat(60));
 
-  let tiktokVideoAnalyses = [];
+  let allVideoAnalyses = [];
 
   try {
     // Initialize services
@@ -50,17 +51,24 @@ async function main() {
     // Scrape all platforms
     console.log('\n🔍 Scraping social media accounts...');
     const allScrapedData = [];
+    let allVideoAnalyses = [];
 
     // Run scrapers sequentially to avoid rate limits
     console.log('\n--- Instagram ---');
-    const instagramData = await scrapeInstagram();
-    allScrapedData.push(...instagramData);
+    const instagramResult = await scrapeInstagram();
+    // Instagram now returns { profileData, reelAnalyses }
+    allScrapedData.push(...instagramResult.profileData);
+    if (instagramResult.reelAnalyses?.length > 0) {
+      allVideoAnalyses.push(...instagramResult.reelAnalyses);
+    }
 
     console.log('\n--- TikTok ---');
     const tiktokResult = await scrapeTikTok();
-    // TikTok now returns { profileData, videoAnalyses }
+    // TikTok returns { profileData, videoAnalyses }
     allScrapedData.push(...tiktokResult.profileData);
-    tiktokVideoAnalyses = tiktokResult.videoAnalyses || [];
+    if (tiktokResult.videoAnalyses?.length > 0) {
+      allVideoAnalyses.push(...tiktokResult.videoAnalyses);
+    }
 
     console.log('\n--- YouTube ---');
     const youtubeData = await scrapeYouTube();
@@ -83,8 +91,8 @@ async function main() {
     allScrapedData.push(...beehiivData);
 
     console.log(`\n✅ Scraped ${allScrapedData.length} accounts total`);
-    if (tiktokVideoAnalyses.length > 0) {
-      const totalVideos = tiktokVideoAnalyses.reduce((sum, a) => sum + a.videosAnalyzed, 0);
+    if (allVideoAnalyses.length > 0) {
+      const totalVideos = allVideoAnalyses.reduce((sum, a) => sum + a.videosAnalyzed, 0);
       console.log(`✅ Analyzed ${totalVideos} TikTok videos for hooks & virality`);
     }
 
@@ -93,8 +101,8 @@ async function main() {
     await appendRawData(allScrapedData);
 
     // Save video analysis data
-    if (tiktokVideoAnalyses.length > 0) {
-      await updateVideoAnalysisSheet(tiktokVideoAnalyses);
+    if (allVideoAnalyses.length > 0) {
+      await updateVideoAnalysisSheet(allVideoAnalyses);
     }
 
     // Analyze sentiment
@@ -124,6 +132,23 @@ async function main() {
     };
     await updateSummarySheet(summaryData);
 
+    // Deploy dashboard to Vercel
+    console.log('\n🚀 Deploying dashboard to Vercel...');
+    try {
+      const deployResult = await saveAndDeploy({
+        accounts: allScrapedData,
+        summary: summaryData,
+        sentiment: aggregateSentiment,
+        videoAnalyses: allVideoAnalyses,
+        comparison,
+      });
+      if (deployResult.success) {
+        console.log(`✅ Dashboard deployed: ${deployResult.url}`);
+      }
+    } catch (deployError) {
+      console.warn('⚠️ Vercel deploy failed (continuing):', deployError.message);
+    }
+
     // Generate report
     console.log('\n📝 Generating report...');
     const sheetUrl = `https://docs.google.com/spreadsheets/d/${process.env.GOOGLE_SHEET_ID}`;
@@ -133,7 +158,7 @@ async function main() {
       sentiment: aggregateSentiment,
       sentimentComparison,
       rawData: allScrapedData,
-      tiktokVideoAnalyses,
+      allVideoAnalyses,
       sheetUrl,
     };
     const report = generateReport(reportData);
@@ -142,13 +167,21 @@ async function main() {
     console.log(report);
     console.log('-'.repeat(60));
 
-    // Send email
+    // Send email (non-blocking - don't fail if email doesn't work)
     console.log('\n📧 Sending email report...');
-    await sendReportEmail(report);
+    try {
+      await sendReportEmail(report);
+    } catch (emailError) {
+      console.warn('⚠️ Email failed (continuing):', emailError.message);
+    }
 
-    // Send Slack notification
+    // Send Slack notification (simple format with totals + top 3)
     console.log('\n💬 Sending Slack notification...');
-    await sendSlackReport(report, sheetUrl);
+    try {
+      await sendSlackReport(report, sheetUrl, reportData);
+    } catch (slackError) {
+      console.warn('⚠️ Slack failed (continuing):', slackError.message);
+    }
 
     console.log('\n' + '='.repeat(60));
     console.log('✅ Weekly report completed successfully!');

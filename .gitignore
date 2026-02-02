@@ -29,3 +29,5 @@ coverage/
 # Temporary files
 tmp/
 temp/
+.vercel
+temp-twitter-tastemakers/

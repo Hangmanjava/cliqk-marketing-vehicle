@@ -1,0 +1,22 @@
+{
+  "name": "cliqk-social-dashboard",
+  "version": "1.0.0",
+  "description": "Cliqk Social Media Analytics Dashboard",
+  "scripts": {
+    "deploy": "npx firebase deploy --only hosting",
+    "deploy:rules": "npx firebase deploy --only firestore:rules",
+    "deploy:all": "npx firebase deploy",
+    "serve": "npx firebase serve --only hosting"
+  },
+  "keywords": [
+    "firebase",
+    "dashboard",
+    "analytics"
+  ],
+  "author": "Cliqk",
+  "license": "MIT",
+  "dependencies": {
+    "firebase-tools": "^15.5.1",
+    "vercel": "^50.9.6"
+  }
+}

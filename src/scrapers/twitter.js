@@ -1,9 +1,26 @@
-import { runActorWithRetry, ACTOR_IDS } from '../services/apify-client.js';
+import { runActorWithRetry } from '../services/apify-client.js';
 import { accounts } from '../config/accounts.js';
 
 /**
  * Scrape X/Twitter profile data using Apify
+ * Actor: apidojo/tweet-scraper
  */
+
+const ACTOR_ID = 'apidojo/tweet-scraper';
+
+// Filter posts from the last 7 days
+const DAYS_TO_SCRAPE = 7;
+
+/**
+ * Check if a date is within the last N days
+ */
+function isWithinDays(dateStr, days) {
+  if (!dateStr) return false;
+  const postDate = new Date(dateStr);
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
+  return postDate >= cutoff;
+}
 
 /**
  * Scrape all Twitter accounts
@@ -16,75 +33,74 @@ export async function scrapeTwitter() {
     try {
       console.log(`Scraping Twitter: @${account.handle}`);
 
-      const data = await runActorWithRetry(ACTOR_IDS.twitter, {
-        handles: [account.handle],
-        tweetsDesired: 20,
+      const data = await runActorWithRetry(ACTOR_ID, {
+        startUrls: [`https://twitter.com/${account.handle}`],
+        maxItems: 50, // Get more tweets to filter by date
         addUserInfo: true,
       });
 
       if (data && data.length > 0) {
-        // Find user info
-        const userData = data.find(item => item.user)?.user || {};
+        // Get author info from first tweet
+        const author = data[0]?.author || {};
 
-        // Get tweet data
-        const tweets = data.filter(item => item.full_text || item.text);
-        const totalImpressions = tweets.reduce((sum, tweet) => {
-          // Twitter API may include impression_count in some responses
-          return sum + (tweet.impression_count || tweet.view_count || 0);
-        }, 0);
-        const totalLikes = tweets.reduce((sum, tweet) => sum + (tweet.favorite_count || 0), 0);
-        const totalRetweets = tweets.reduce((sum, tweet) => sum + (tweet.retweet_count || 0), 0);
-        const totalReplies = tweets.reduce((sum, tweet) => sum + (tweet.reply_count || 0), 0);
+        // Filter tweets from the last 7 days
+        const recentTweets = data.filter(tweet =>
+          isWithinDays(tweet.createdAt || tweet.date || tweet.timestamp, DAYS_TO_SCRAPE)
+        );
 
-        // If no impression data, estimate from engagement
-        const estimatedImpressions = totalImpressions > 0
-          ? totalImpressions
-          : Math.round((totalLikes + totalRetweets + totalReplies) * 50);
+        console.log(`  📅 Found ${recentTweets.length}/${data.length} tweets in last ${DAYS_TO_SCRAPE} days`);
 
-        // Collect tweet text for sentiment analysis
-        const postCaptions = tweets
-          .map(tweet => tweet.full_text || tweet.text || '')
-          .filter(text => text.length > 0);
+        // Calculate totals from recent tweets
+        let totalViews = 0;
+        let totalLikes = 0;
+        let totalRetweets = 0;
+        let totalReplies = 0;
 
-        // Collect replies for sentiment analysis
-        const replies = tweets
-          .flatMap(tweet => tweet.replies || [])
-          .map(reply => reply.full_text || reply.text || '')
-          .filter(text => text.length > 0);
+        const postCaptions = [];
+
+        for (const tweet of recentTweets) {
+          totalViews += tweet.viewCount || 0;
+          totalLikes += tweet.likeCount || 0;
+          totalRetweets += tweet.retweetCount || 0;
+          totalReplies += tweet.replyCount || 0;
+
+          if (tweet.text || tweet.fullText) {
+            postCaptions.push(tweet.fullText || tweet.text);
+          }
+        }
 
         results.push({
           platform: 'twitter',
           handle: account.handle,
           url: account.url,
-          followers: userData.followers_count || 0,
-          following: userData.friends_count || 0,
-          impressions: estimatedImpressions,
+          followers: author.followers || 0,
+          following: author.following || 0,
+          impressions: totalViews, // Twitter views = impressions
           engagement: totalLikes + totalRetweets + totalReplies,
           likes: totalLikes,
           retweets: totalRetweets,
           replies: totalReplies,
           postCaptions,
-          audienceComments: replies,
+          audienceComments: [],
           scrapedAt: new Date().toISOString(),
         });
+
+        console.log(`  ✓ ${account.handle}: ${totalViews.toLocaleString()} views, ${author.followers?.toLocaleString()} followers`);
       } else {
-        results.push(createEmptyResult('twitter', account));
+        results.push(createEmptyResult(account));
       }
     } catch (error) {
-      console.error(`Failed to scrape Twitter @${account.handle}:`, error.message);
-      results.push(createEmptyResult('twitter', account, error.message));
+      console.error(`  ✗ Failed @${account.handle}:`, error.message);
+      results.push(createEmptyResult(account, error.message));
     }
   }
 
   return results;
 }
 
-/**
- * Create an empty result for failed scrapes
- */
-function createEmptyResult(platform, account, error = null) {
+function createEmptyResult(account, error = null) {
   return {
-    platform,
+    platform: 'twitter',
     handle: account.handle,
     url: account.url,
     followers: 0,

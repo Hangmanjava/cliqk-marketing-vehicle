@@ -1,163 +1,131 @@
-import { runActorWithRetry, ACTOR_IDS } from '../services/apify-client.js';
-import { accounts } from '../config/accounts.js';
-
 /**
- * Scrape LinkedIn profile and page data using Apify
- * Note: LinkedIn is highly restrictive - data may be limited
+ * LinkedIn scraper
+ * Reads impressions from Google Form responses (first sheet in the document)
+ * Team members submit their LinkedIn impressions weekly via the form
  */
 
+import { getLinkedInFormResponses } from '../services/google-sheets.js';
+
+// LinkedIn accounts to track
+const LINKEDIN_ACCOUNTS = [
+  { handle: 'pavankumarny', url: 'https://www.linkedin.com/in/pavankumarny/', name: 'Pavan Kumar', email: 'pavan@mycliqk.com' },
+  { handle: 'charles-legard-2953a2201', url: 'https://www.linkedin.com/in/charles-legard-2953a2201/', name: 'Charles Legard', email: 'charles@mycliqk.com' },
+  { handle: 'marvin-ford-b99623186', url: 'https://www.linkedin.com/in/marvin-ford-b99623186/', name: 'Marvin Ford', email: 'marvin@mycliqk.com' },
+  { handle: 'charana-athauda-784a24177', url: 'https://www.linkedin.com/in/charana-athauda-784a24177/', name: 'Charana Athauda', email: 'charana@mycliqk.com' },
+  { handle: 'shawnreddy', url: 'https://www.linkedin.com/in/shawnreddy/', name: 'Shawn Reddy', email: 'shawn@mycliqk.com' },
+  { handle: 'brandon-garcia-530629369', url: 'https://www.linkedin.com/in/brandon-garcia-530629369/', name: 'Brandon Garcia', email: 'brandon@mycliqk.com' },
+  { handle: 'gary-sargeant07', url: 'https://www.linkedin.com/in/gary-sargeant07/', name: 'Gary Sargeant', email: 'gary@mycliqk.com' },
+  { handle: 'alvin-qingkai-pan', url: 'https://www.linkedin.com/in/alvin-qingkai-pan/', name: 'Alvin Pan', email: 'alvin@mycliqk.com' },
+  { handle: 'hriday-narang', url: 'https://www.linkedin.com/in/hriday-narang/', name: 'Hriday Narang', email: 'hriday@mycliqk.com' },
+  { handle: 'armaan-hossain', url: 'https://www.linkedin.com/in/armaan-hossain/', name: 'Armaan Hossain', email: 'armaan@mycliqk.com' },
+  { handle: 'rohangurram', url: 'https://www.linkedin.com/in/rohangurram/', name: 'Rohan Gurram', email: 'rohan@mycliqk.com' },
+];
+
+// Company page
+const LINKEDIN_COMPANY = {
+  handle: 'mycliqk',
+  url: 'https://www.linkedin.com/company/mycliqk/',
+  name: 'Cliqk',
+};
+
 /**
- * Scrape all LinkedIn accounts (profiles, pages, newsletters)
- * @returns {Promise<Array>} Array of account data with impressions and content
+ * Match form response to account by name, email, or handle
+ */
+function matchResponseToAccount(response, account) {
+  const responseName = response.name?.toLowerCase().trim() || '';
+  const responseEmail = response.email?.toLowerCase().trim() || '';
+  const responseHandle = response.handle?.toLowerCase().trim() || '';
+
+  const accountName = account.name?.toLowerCase() || '';
+  const accountEmail = account.email?.toLowerCase() || '';
+  const accountHandle = account.handle?.toLowerCase() || '';
+
+  // Match by email (most reliable)
+  if (responseEmail && accountEmail && responseEmail.includes(accountEmail.split('@')[0])) {
+    return true;
+  }
+
+  // Match by name
+  if (responseName && accountName) {
+    const nameParts = accountName.split(' ');
+    if (nameParts.some(part => responseName.includes(part))) {
+      return true;
+    }
+  }
+
+  // Match by handle
+  if (responseHandle && accountHandle && responseHandle.includes(accountHandle)) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Scrape LinkedIn - reads impressions from form responses
  */
 export async function scrapeLinkedIn() {
+  console.log('Reading LinkedIn impressions from form responses...');
+
+  // Get form responses from the first sheet
+  const formResponses = await getLinkedInFormResponses();
+
   const results = [];
+  let totalImpressions = 0;
+  let submittedCount = 0;
 
-  // Scrape profiles
-  for (const account of accounts.linkedin.profiles) {
-    try {
-      console.log(`Scraping LinkedIn profile: ${account.handle}`);
+  // Add profile accounts with matched impressions
+  for (const account of LINKEDIN_ACCOUNTS) {
+    // Find matching form response
+    const matchedResponse = formResponses.find(r => matchResponseToAccount(r, account));
 
-      const data = await runActorWithRetry(ACTOR_IDS.linkedin, {
-        profileUrls: [account.url],
-        scrapeCompany: false,
-      });
+    const impressions = matchedResponse?.impressions || 0;
+    if (impressions > 0) {
+      submittedCount++;
+      totalImpressions += impressions;
+    }
 
-      if (data && data.length > 0) {
-        const profileData = data[0];
+    results.push({
+      platform: 'linkedin',
+      type: 'profile',
+      handle: account.handle,
+      name: account.name,
+      url: account.url,
+      impressions,
+      engagement: 0,
+      followers: 0,
+      submitted: !!matchedResponse,
+      scrapedAt: new Date().toISOString(),
+    });
 
-        // LinkedIn doesn't expose impression data publicly
-        // We can only get connection count and some basic info
-        const connections = profileData.connectionCount || profileData.connections || 0;
-
-        // Recent activity if available
-        const posts = profileData.posts || profileData.activities || [];
-        const totalReactions = posts.reduce((sum, post) => sum + (post.reactions || post.likes || 0), 0);
-        const totalComments = posts.reduce((sum, post) => sum + (post.comments || 0), 0);
-
-        // Estimate impressions from engagement (LinkedIn avg engagement ~2-3%)
-        const estimatedImpressions = Math.round((totalReactions + totalComments) * 40);
-
-        // Collect post content for sentiment analysis
-        const postCaptions = posts
-          .map(post => post.text || post.content || '')
-          .filter(text => text.length > 0);
-
-        results.push({
-          platform: 'linkedin',
-          type: 'profile',
-          handle: account.handle,
-          url: account.url,
-          connections,
-          impressions: estimatedImpressions,
-          engagement: totalReactions + totalComments,
-          reactions: totalReactions,
-          comments: totalComments,
-          postCaptions,
-          audienceComments: [], // Comments not easily accessible
-          scrapedAt: new Date().toISOString(),
-        });
-      } else {
-        results.push(createEmptyResult('linkedin', 'profile', account));
-      }
-    } catch (error) {
-      console.error(`Failed to scrape LinkedIn profile ${account.handle}:`, error.message);
-      results.push(createEmptyResult('linkedin', 'profile', account, error.message));
+    if (matchedResponse) {
+      console.log(`  ✓ ${account.name}: ${impressions.toLocaleString()} impressions`);
     }
   }
 
-  // Scrape company pages
-  for (const account of accounts.linkedin.pages) {
-    try {
-      console.log(`Scraping LinkedIn page: ${account.handle}`);
+  // Add company page (no form data for this typically)
+  results.push({
+    platform: 'linkedin',
+    type: 'company',
+    handle: LINKEDIN_COMPANY.handle,
+    name: LINKEDIN_COMPANY.name,
+    url: LINKEDIN_COMPANY.url,
+    impressions: 0,
+    engagement: 0,
+    followers: 0,
+    submitted: false,
+    scrapedAt: new Date().toISOString(),
+  });
 
-      // Company pages may require different actor or approach
-      const data = await runActorWithRetry(ACTOR_IDS.linkedin, {
-        companyUrls: [account.url],
-      });
+  const notSubmitted = LINKEDIN_ACCOUNTS.length - submittedCount;
 
-      if (data && data.length > 0) {
-        const pageData = data[0];
-
-        const followers = pageData.followersCount || pageData.followers || 0;
-        const posts = pageData.posts || [];
-        const totalReactions = posts.reduce((sum, post) => sum + (post.reactions || 0), 0);
-        const totalComments = posts.reduce((sum, post) => sum + (post.comments || 0), 0);
-        const estimatedImpressions = Math.round((totalReactions + totalComments) * 40);
-
-        const postCaptions = posts
-          .map(post => post.text || post.content || '')
-          .filter(text => text.length > 0);
-
-        results.push({
-          platform: 'linkedin',
-          type: 'page',
-          handle: account.handle,
-          url: account.url,
-          companyId: account.companyId,
-          followers,
-          impressions: estimatedImpressions,
-          engagement: totalReactions + totalComments,
-          reactions: totalReactions,
-          comments: totalComments,
-          postCaptions,
-          audienceComments: [],
-          scrapedAt: new Date().toISOString(),
-        });
-      } else {
-        results.push(createEmptyResult('linkedin', 'page', account));
-      }
-    } catch (error) {
-      console.error(`Failed to scrape LinkedIn page ${account.handle}:`, error.message);
-      results.push(createEmptyResult('linkedin', 'page', account, error.message));
-    }
-  }
-
-  // Scrape newsletters (limited data available)
-  for (const account of accounts.linkedin.newsletters) {
-    try {
-      console.log(`Scraping LinkedIn newsletter: ${account.handle}`);
-
-      // Newsletter data is very limited via scraping
-      // This would typically need manual entry or LinkedIn API access
-      results.push({
-        platform: 'linkedin',
-        type: 'newsletter',
-        handle: account.handle,
-        newsletterId: account.newsletterId,
-        subscribers: 0, // Not available via scraping
-        impressions: 0,
-        engagement: 0,
-        postCaptions: [],
-        audienceComments: [],
-        note: 'Newsletter data requires manual entry or LinkedIn API access',
-        scrapedAt: new Date().toISOString(),
-      });
-    } catch (error) {
-      console.error(`Failed to scrape LinkedIn newsletter ${account.handle}:`, error.message);
-      results.push(createEmptyResult('linkedin', 'newsletter', account, error.message));
-    }
+  console.log(`  📊 LinkedIn Total: ${totalImpressions.toLocaleString()} impressions from ${submittedCount} submissions`);
+  if (notSubmitted > 0) {
+    console.log(`  ⚠️ ${notSubmitted} team members haven't submitted yet`);
   }
 
   return results;
 }
 
-/**
- * Create an empty result for failed scrapes
- */
-function createEmptyResult(platform, type, account, error = null) {
-  return {
-    platform,
-    type,
-    handle: account.handle,
-    url: account.url,
-    connections: 0,
-    followers: 0,
-    impressions: 0,
-    engagement: 0,
-    postCaptions: [],
-    audienceComments: [],
-    error,
-    scrapedAt: new Date().toISOString(),
-  };
-}
+// Export accounts for reference
+export { LINKEDIN_ACCOUNTS, LINKEDIN_COMPANY };

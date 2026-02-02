@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cliqk Analytics</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="icon" href="logo.jpg">
+</head>
+<body>
+  <div class="app">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <img src="logo.jpg" alt="Cliqk" class="logo-img">
+        <span class="logo-text">Cliqk</span>
+      </div>
+      <nav class="sidebar-nav">
+        <a href="#overview" class="nav-item active" data-section="overview">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+          Overview
+        </a>
+        <a href="#platforms" class="nav-item" data-section="platforms">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+          Platforms
+        </a>
+        <a href="#accounts" class="nav-item" data-section="accounts">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          Accounts
+        </a>
+        <a href="#video-analysis" class="nav-item" data-section="video-analysis">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+          Video Analysis
+        </a>
+        <a href="#sentiment" class="nav-item" data-section="sentiment">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          Sentiment
+        </a>
+      </nav>
+      <div class="sidebar-footer">
+        <a href="https://docs.google.com/spreadsheets/d/1jZL3SD124wj9ox0QI1GpZQIVmW6SNC7tmO500EV5JhE" target="_blank" class="sheet-link">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+          View Full Data
+        </a>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+      <!-- Header -->
+      <header class="header">
+        <div class="header-left">
+          <button class="hamburger-btn" id="hamburgerBtn">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+          </button>
+          <div class="header-title">
+            <h1>Analytics Dashboard</h1>
+            <span class="last-updated" id="lastUpdated">Loading...</span>
+          </div>
+        </div>
+        <div class="header-actions">
+          <button id="refreshBtn" class="btn btn-primary">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="refresh-icon"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+            <span class="btn-text">Run Scraper</span>
+            <span class="btn-loading">Running...</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- Scraper Progress Overlay -->
+      <div class="scraper-progress-overlay" id="scraperProgress">
+        <div class="scraper-progress-modal">
+          <div class="scraper-progress-header">
+            <svg class="scraper-spinner" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+            <h3>Running Scraper</h3>
+          </div>
+          <div class="scraper-progress-status" id="scraperStatus">Initializing...</div>
+          <div class="scraper-progress-bar-container">
+            <div class="scraper-progress-bar" id="scraperProgressBar"></div>
+          </div>
+          <div class="scraper-progress-details">
+            <span id="scraperPercent">0%</span>
+            <span id="scraperPlatform">Starting...</span>
+          </div>
+          <div class="scraper-progress-platforms" id="scraperPlatforms">
+            <div class="platform-progress-item" data-platform="instagram">
+              <span class="platform-progress-name">Instagram</span>
+              <span class="platform-progress-status pending">Pending</span>
+            </div>
+            <div class="platform-progress-item" data-platform="tiktok">
+              <span class="platform-progress-name">TikTok</span>
+              <span class="platform-progress-status pending">Pending</span>
+            </div>
+            <div class="platform-progress-item" data-platform="youtube">
+              <span class="platform-progress-name">YouTube</span>
+              <span class="platform-progress-status pending">Pending</span>
+            </div>
+            <div class="platform-progress-item" data-platform="twitter">
+              <span class="platform-progress-name">X (Twitter)</span>
+              <span class="platform-progress-status pending">Pending</span>
+            </div>
+            <div class="platform-progress-item" data-platform="linkedin">
+              <span class="platform-progress-name">LinkedIn</span>
+              <span class="platform-progress-status pending">Pending</span>
+            </div>
+            <div class="platform-progress-item" data-platform="reddit">
+              <span class="platform-progress-name">Reddit</span>
+              <span class="platform-progress-status pending">Pending</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Mobile Menu Overlay -->
+      <div class="mobile-menu-overlay" id="mobileMenuOverlay">
+        <div class="mobile-menu">
+          <div class="mobile-menu-header">
+            <img src="logo.jpg" alt="Cliqk" class="mobile-menu-logo">
+            <span class="mobile-menu-title">Cliqk</span>
+            <button class="mobile-menu-close" id="mobileMenuClose">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+          <nav class="mobile-menu-nav">
+            <a href="#overview" class="mobile-menu-item active" data-section="overview">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+              Overview
+            </a>
+            <a href="#platforms" class="mobile-menu-item" data-section="platforms">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+              Platforms
+            </a>
+            <a href="#accounts" class="mobile-menu-item" data-section="accounts">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+              Accounts
+            </a>
+            <a href="#video-analysis" class="mobile-menu-item" data-section="video-analysis">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+              Video Analysis
+            </a>
+            <a href="#sentiment" class="mobile-menu-item" data-section="sentiment">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+              Sentiment
+            </a>
+          </nav>
+        </div>
+      </div>
+
+      <!-- Overview Section -->
+      <section id="overview" class="section active">
+        <!-- KPI Cards -->
+        <div class="kpi-grid">
+          <div class="kpi-card primary">
+            <div class="kpi-label">Total Views</div>
+            <div class="kpi-value" id="totalImpressions">--</div>
+            <div class="kpi-change" id="impressionChange">--</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Total Followers</div>
+            <div class="kpi-value" id="totalFollowers">--</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Total Engagement</div>
+            <div class="kpi-value" id="totalEngagement">--</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Accounts Tracked</div>
+            <div class="kpi-value" id="totalAccounts">--</div>
+          </div>
+        </div>
+
+        <!-- Quick Stats Row -->
+        <div class="stats-row">
+          <!-- Top Performers -->
+          <div class="card">
+            <div class="card-header">
+              <h2>Top Performers</h2>
+            </div>
+            <div class="card-body">
+              <div class="performers-list" id="topPerformers">
+                <div class="loading-state">Loading...</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Sentiment Summary -->
+          <div class="card">
+            <div class="card-header">
+              <h2>Sentiment Overview</h2>
+            </div>
+            <div class="card-body">
+              <div class="sentiment-summary">
+                <div class="sentiment-item">
+                  <div class="sentiment-header">
+                    <span class="sentiment-label">Content Sentiment</span>
+                    <span class="sentiment-value" id="contentSentiment">--</span>
+                  </div>
+                  <div class="sentiment-bar">
+                    <div class="sentiment-fill" id="contentSentimentBar"></div>
+                  </div>
+                </div>
+                <div class="sentiment-item">
+                  <div class="sentiment-header">
+                    <span class="sentiment-label">Audience Response</span>
+                    <span class="sentiment-value" id="audienceSentiment">--</span>
+                  </div>
+                  <div class="sentiment-bar">
+                    <div class="sentiment-fill" id="audienceSentimentBar"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Platforms Section -->
+      <section id="platforms" class="section">
+        <div class="card full-width">
+          <div class="card-header">
+            <h2>Platform Performance</h2>
+          </div>
+          <div class="card-body">
+            <div class="platform-grid" id="platformGrid">
+              <div class="loading-state">Loading...</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Accounts Section -->
+      <section id="accounts" class="section">
+        <div class="card full-width">
+          <div class="card-header">
+            <h2>All Accounts</h2>
+            <div class="filter-tabs" id="filterTabs">
+              <button class="filter-tab active" data-platform="all">All</button>
+              <button class="filter-tab" data-platform="instagram">Instagram</button>
+              <button class="filter-tab" data-platform="tiktok">TikTok</button>
+              <button class="filter-tab" data-platform="youtube">YouTube</button>
+              <button class="filter-tab" data-platform="twitter">X</button>
+              <button class="filter-tab" data-platform="linkedin">LinkedIn</button>
+              <button class="filter-tab" data-platform="reddit">Reddit</button>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="table-container">
+              <table class="data-table" id="accountsTable">
+                <thead>
+                  <tr>
+                    <th>Platform</th>
+                    <th>Handle</th>
+                    <th>Followers</th>
+                    <th>Views</th>
+                    <th>Engagement</th>
+                    <th>Updated</th>
+                  </tr>
+                </thead>
+                <tbody id="accountsBody">
+                  <tr><td colspan="6" class="loading-state">Loading...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Video Analysis Section -->
+      <section id="video-analysis" class="section">
+        <div class="card full-width">
+          <div class="card-header">
+            <h2>Video Content Analysis</h2>
+            <p class="card-subtitle">Hook effectiveness and virality potential for TikTok & Instagram Reels</p>
+          </div>
+          <div class="card-body">
+            <div class="video-analysis-list" id="videoAnalyses">
+              <div class="loading-state">Loading...</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Sentiment Section -->
+      <section id="sentiment" class="section">
+        <div class="card full-width">
+          <div class="card-header">
+            <h2>Sentiment Analysis</h2>
+            <p class="card-subtitle">AI-powered analysis of content tone and audience reception</p>
+          </div>
+          <div class="card-body">
+            <div class="sentiment-detail" id="sentimentDetail">
+              <div class="loading-state">Loading...</div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Account Detail Modal -->
+  <div class="modal" id="accountModal">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="modalTitle">Account Details</h3>
+        <button class="modal-close" id="modalClose">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="modal-body" id="modalBody">
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div class="toast" id="toast">
+    <span class="toast-message"></span>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

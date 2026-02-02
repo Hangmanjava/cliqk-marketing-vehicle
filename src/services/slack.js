@@ -83,14 +83,36 @@ async function sendViaBotToken(botToken, channel, message, options = {}) {
 
 /**
  * Send a formatted report to Slack
- * @param {string} report - The report content (markdown)
+ * Simple format: total numbers + top 3 channels
+ * @param {string} report - The full report content (not used in simple format)
  * @param {string} sheetUrl - URL to the Google Sheet
+ * @param {object} data - Raw data for generating simple report
  */
-export async function sendSlackReport(report, sheetUrl = '') {
-  // Slack uses mrkdwn format
-  const slackFormatted = report
-    .replace(/\*\*(.+?)\*\*/g, '*$1*')
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<$2|$1>');
+export async function sendSlackReport(report, sheetUrl = '', data = null) {
+  // If we have raw data, generate simple summary
+  let simpleReport;
+
+  if (data && data.rawData) {
+    const accounts = data.rawData;
+    const totalImpressions = accounts.reduce((sum, a) => sum + (a.impressions || 0), 0);
+
+    // Get top 3 by impressions
+    const sorted = [...accounts]
+      .filter(a => a.impressions > 0)
+      .sort((a, b) => b.impressions - a.impressions)
+      .slice(0, 3);
+
+    const top3Text = sorted
+      .map((a, i) => `${i + 1}. @${a.handle} (${a.platform}) - ${a.impressions.toLocaleString()}`)
+      .join('\n');
+
+    simpleReport = `*Total Impressions This Week:* ${totalImpressions.toLocaleString()}\n\n*Top 3 Channels:*\n${top3Text}`;
+  } else {
+    // Fallback to extracting from report text
+    const totalMatch = report.match(/TOTAL IMPRESSIONS:\s*([\d,]+)/i);
+    const total = totalMatch ? totalMatch[1] : 'N/A';
+    simpleReport = `*Total Impressions This Week:* ${total}`;
+  }
 
   const blocks = [
     {
@@ -105,7 +127,7 @@ export async function sendSlackReport(report, sheetUrl = '') {
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: slackFormatted,
+        text: simpleReport,
       },
     },
   ];
@@ -115,20 +137,10 @@ export async function sendSlackReport(report, sheetUrl = '') {
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: `<${sheetUrl}|View Full Data in Google Sheets>`,
+        text: `<${sheetUrl}|View Full Data>`,
       },
     });
   }
-
-  blocks.push({
-    type: 'context',
-    elements: [
-      {
-        type: 'mrkdwn',
-        text: `Generated on ${new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' })} PST`,
-      },
-    ],
-  });
 
   await sendSlackMessage('Weekly Social Media Report', {
     additionalFields: { blocks },

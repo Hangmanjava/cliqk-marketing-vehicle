@@ -1,0 +1,40 @@
+name: Daily Tweet Suggestions
+
+on:
+  # Run daily at 9 AM ET (14:00 UTC)
+  schedule:
+    - cron: '0 14 * * *'
+
+  # Allow manual trigger for testing
+  workflow_dispatch:
+
+jobs:
+  generate-tweets:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate and send tweet suggestions
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+        run: npm run daily-tweets
+
+      - name: Log completion
+        if: success()
+        run: echo "✅ Daily tweet suggestions sent to Slack at $(date)"
+
+      - name: Log failure
+        if: failure()
+        run: echo "❌ Failed to generate tweet suggestions at $(date)"

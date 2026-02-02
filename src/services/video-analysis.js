@@ -2,7 +2,7 @@ import OpenAI from 'openai';
 
 /**
  * Video content analysis service using OpenAI
- * Analyzes TikTok video hooks and virality potential
+ * Analyzes TikTok and Instagram Reels for hooks and virality potential
  */
 
 let openai = null;
@@ -31,12 +31,15 @@ export async function analyzeVideoContent(video) {
     return {
       videoId: video.videoId,
       url: video.url,
+      platform: video.platform || 'unknown',
       analyzed: false,
       reason: 'No transcript available',
     };
   }
 
   const client = getOpenAIClient();
+  const platform = video.platform || 'tiktok';
+  const platformName = platform === 'instagram' ? 'Instagram Reel' : 'TikTok';
 
   // Extract the hook (first ~50 words or first 15 seconds worth)
   const words = video.transcript.split(' ');
@@ -49,7 +52,7 @@ export async function analyzeVideoContent(video) {
       messages: [
         {
           role: 'system',
-          content: `You are a viral content expert specializing in TikTok and short-form video. Analyze video transcripts for their hook effectiveness and virality potential.
+          content: `You are a viral content expert specializing in ${platformName} and short-form video. Analyze video transcripts for their hook effectiveness and virality potential.
 
 Your analysis should be practical and actionable. Focus on:
 1. Hook Analysis: How well does the opening grab attention? Does it create curiosity or promise value?
@@ -69,7 +72,7 @@ Return a JSON object with these fields:
         },
         {
           role: 'user',
-          content: `Analyze this TikTok video:
+          content: `Analyze this ${platformName} video:
 
 HOOK (first ~10 seconds):
 "${hookText}"
@@ -91,6 +94,7 @@ ${video.likeCount ? `Likes: ${video.likeCount.toLocaleString()}` : ''}`,
     return {
       videoId: video.videoId,
       url: video.url,
+      platform,
       analyzed: true,
       hook: hookText,
       ...analysis,
@@ -100,6 +104,7 @@ ${video.likeCount ? `Likes: ${video.likeCount.toLocaleString()}` : ''}`,
     return {
       videoId: video.videoId,
       url: video.url,
+      platform,
       analyzed: false,
       error: error.message,
     };
@@ -115,7 +120,7 @@ export async function analyzeVideos(videos) {
   const results = [];
 
   for (const video of videos) {
-    console.log(`Analyzing video: ${video.videoId || video.url}`);
+    console.log(`  Analyzing video: ${video.videoId || video.url}`);
     const analysis = await analyzeVideoContent(video);
     results.push(analysis);
 
@@ -127,22 +132,25 @@ export async function analyzeVideos(videos) {
 }
 
 /**
- * Generate a summary of video analyses for a TikTok account
+ * Generate a summary of video analyses for an account
  * @param {string} handle - Account handle
  * @param {Array} analyses - Array of video analyses
+ * @param {string} platform - Platform name (tiktok or instagram)
  * @returns {object} Summary statistics
  */
-export function summarizeAccountAnalysis(handle, analyses) {
+export function summarizeAccountAnalysis(handle, analyses, platform = 'tiktok') {
   const analyzed = analyses.filter(a => a.analyzed);
 
   if (analyzed.length === 0) {
     return {
       handle,
+      platform,
       videosAnalyzed: 0,
       avgHookScore: 0,
       avgViralityScore: 0,
       topVideos: [],
       commonIssues: [],
+      topHooks: [],
     };
   }
 
@@ -159,6 +167,12 @@ export function summarizeAccountAnalysis(handle, analyses) {
       viralityScore: v.viralityScore,
       summary: v.summary,
     }));
+
+  // Collect top hooks
+  const topHooks = analyzed
+    .filter(a => a.hook && a.hookScore >= 7)
+    .slice(0, 3)
+    .map(a => a.hook.substring(0, 100));
 
   // Collect all improvements as common issues
   const allImprovements = analyzed.flatMap(a => a.improvements || []);
@@ -182,27 +196,49 @@ export function summarizeAccountAnalysis(handle, analyses) {
 
   return {
     handle,
+    platform,
     videosAnalyzed: analyzed.length,
     avgHookScore: Math.round(avgHookScore * 10) / 10,
     avgViralityScore: Math.round(avgViralityScore * 10) / 10,
     topVideos,
+    topHooks,
     commonIssues,
     contentTypes,
   };
 }
 
 /**
- * Generate report section for TikTok video analysis
+ * Generate report section for video analysis (both TikTok and Instagram)
  * @param {Array} accountSummaries - Array of account summaries
  * @returns {string} Markdown report section
  */
 export function generateVideoAnalysisReport(accountSummaries) {
   const lines = [];
 
-  lines.push('**TIKTOK VIDEO ANALYSIS:**');
-  lines.push('');
+  // Group by platform
+  const tiktokSummaries = accountSummaries.filter(s => s.platform === 'tiktok');
+  const instagramSummaries = accountSummaries.filter(s => s.platform === 'instagram');
 
-  for (const summary of accountSummaries) {
+  if (tiktokSummaries.length > 0) {
+    lines.push('**TIKTOK VIDEO ANALYSIS:**');
+    lines.push('');
+    lines.push(...formatPlatformAnalysis(tiktokSummaries));
+  }
+
+  if (instagramSummaries.length > 0) {
+    if (tiktokSummaries.length > 0) lines.push('');
+    lines.push('**INSTAGRAM REELS ANALYSIS:**');
+    lines.push('');
+    lines.push(...formatPlatformAnalysis(instagramSummaries));
+  }
+
+  return lines.join('\n');
+}
+
+function formatPlatformAnalysis(summaries) {
+  const lines = [];
+
+  for (const summary of summaries) {
     if (summary.videosAnalyzed === 0) {
       lines.push(`• @${summary.handle}: No videos analyzed this week`);
       continue;
@@ -225,5 +261,5 @@ export function generateVideoAnalysisReport(accountSummaries) {
     lines.push('');
   }
 
-  return lines.join('\n');
+  return lines;
 }

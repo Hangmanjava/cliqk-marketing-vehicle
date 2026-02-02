@@ -46,15 +46,18 @@ jobs:
           APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
           GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
           GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          LINKEDIN_FORM_RESPONSE_SHEET_ID: ${{ secrets.LINKEDIN_FORM_RESPONSE_SHEET_ID }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
-          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           EMAIL_RECIPIENTS: ${{ secrets.EMAIL_RECIPIENTS }}
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL: ${{ secrets.SLACK_CHANNEL }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
 
       - name: Notify on failure
         if: failure()
         run: |
-          curl -X POST -H 'Content-type: application/json' \
-            --data '{"text":"❌ Weekly Social Media Report failed! Check GitHub Actions for details."}' \
-            ${{ secrets.SLACK_WEBHOOK_URL }}
+          curl -X POST -H "Authorization: Bearer ${{ secrets.SLACK_BOT_TOKEN }}" \
+            -H 'Content-type: application/json' \
+            --data '{"channel":"${{ secrets.SLACK_CHANNEL }}","text":"❌ Weekly Social Media Report failed! Check GitHub Actions for details."}' \
+            https://slack.com/api/chat.postMessage

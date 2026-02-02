@@ -1,0 +1,33 @@
+name: LinkedIn Impressions - Reminder
+
+on:
+  schedule:
+    # Sunday 9am PST = Sunday 5pm UTC (during PST) / 4pm UTC (during PDT)
+    - cron: '0 17 * * 0'
+  workflow_dispatch: # Manual trigger for testing
+
+jobs:
+  send-reminder:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Send reminder email
+        run: node src/linkedin-reminder.js reminder
+        env:
+          APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+          LINKEDIN_FORM_RESPONSE_SHEET_ID: ${{ secrets.LINKEDIN_FORM_RESPONSE_SHEET_ID }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL: ${{ secrets.SLACK_CHANNEL }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}

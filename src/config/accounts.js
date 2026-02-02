@@ -36,26 +36,11 @@ export const accounts = {
     { handle: 'myacliqk', url: 'https://twitter.com/myacliqk' },
   ],
 
+  // LinkedIn removed - will be replaced with new implementation
   linkedin: {
-    profiles: [
-      { handle: 'pavankumarny', url: 'https://www.linkedin.com/in/pavankumarny/' },
-      { handle: 'wilmanchan', url: 'https://www.linkedin.com/in/wilmanchan/' },
-      { handle: 'charles-legard-2953a2201', url: 'https://www.linkedin.com/in/charles-legard-2953a2201/' },
-      { handle: 'marvin-ford-b99623186', url: 'https://www.linkedin.com/in/marvin-ford-b99623186/' },
-      { handle: 'charana-athauda-784a24177', url: 'https://www.linkedin.com/in/charana-athauda-784a24177/' },
-      { handle: 'shawnreddy', url: 'https://www.linkedin.com/in/shawnreddy/' },
-      { handle: 'brandon-garcia-530629369', url: 'https://www.linkedin.com/in/brandon-garcia-530629369/' },
-      { handle: 'gary-sargeant07', url: 'https://www.linkedin.com/in/gary-sargeant07/' },
-      { handle: 'alvin-qingkai-pan', url: 'https://www.linkedin.com/in/alvin-qingkai-pan/' },
-      { handle: 'hriday-narang', url: 'https://www.linkedin.com/in/hriday-narang/' },
-      { handle: 'armaan-hossain', url: 'https://www.linkedin.com/in/armaan-hossain/' },
-    ],
-    pages: [
-      { handle: 'mycliqk', url: 'https://www.linkedin.com/company/mycliqk/', companyId: '110902777' },
-    ],
-    newsletters: [
-      { handle: 'cliqk-newsletter', newsletterId: '7188317004687200258' },
-    ],
+    profiles: [],
+    pages: [],
+    newsletters: [],
   },
 
   reddit: [

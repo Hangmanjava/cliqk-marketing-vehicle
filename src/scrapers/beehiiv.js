@@ -1,10 +1,13 @@
-import { runActorWithRetry, ACTOR_IDS } from '../services/apify-client.js';
+import { runActorWithRetry } from '../services/apify-client.js';
 import { accounts } from '../config/accounts.js';
 
 /**
  * Scrape Beehiiv newsletter data using Apify web scraper
  * Note: Limited data available without authenticated access
+ * Actor: apify/cheerio-scraper (lighter weight than web-scraper)
  */
+
+const ACTOR_ID = 'apify/cheerio-scraper';
 
 /**
  * Scrape all Beehiiv newsletters
@@ -17,9 +20,9 @@ export async function scrapeBeehiiv() {
     try {
       console.log(`Scraping Beehiiv: ${account.handle}`);
 
-      // Use generic web scraper for Beehiiv
+      // Use cheerio scraper for Beehiiv (lighter weight)
       // This will have limited data without authentication
-      const data = await runActorWithRetry(ACTOR_IDS.webScraper, {
+      const data = await runActorWithRetry(ACTOR_ID, {
         startUrls: [{ url: account.url }],
         pageFunction: async function pageFunction(context) {
           const { $, request } = context;

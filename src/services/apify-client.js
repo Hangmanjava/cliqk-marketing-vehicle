@@ -1,10 +1,12 @@
 import { ApifyClient } from 'apify-client';
+import { getWorkingActorForPlatform, testActor } from './apify-health-check.js';
 
 /**
  * Apify API wrapper for running scraper actors
  */
 
 let client = null;
+let actorOverrides = {}; // Runtime overrides for failed actors
 
 /**
  * Initialize the Apify client
@@ -28,6 +30,21 @@ export function getApifyClient() {
 }
 
 /**
+ * Set an actor override (used when an actor fails and needs replacement)
+ */
+export function setActorOverride(platform, actorId) {
+  actorOverrides[platform] = actorId;
+  console.log(`  📝 Actor override set for ${platform}: ${actorId}`);
+}
+
+/**
+ * Get the active actor for a platform (with override support)
+ */
+export function getActiveActor(platform) {
+  return actorOverrides[platform] || ACTOR_IDS[platform];
+}
+
+/**
  * Run an Apify actor and wait for results
  * @param {string} actorId - The actor ID (e.g., 'apify/instagram-profile-scraper')
  * @param {object} input - Input configuration for the actor
@@ -37,15 +54,11 @@ export function getApifyClient() {
 export async function runActor(actorId, input, options = {}) {
   const apifyClient = getApifyClient();
 
-  const { timeoutSecs = 300, memoryMbytes = 1024 } = options;
-
   console.log(`Running actor: ${actorId}`);
 
   try {
-    const run = await apifyClient.actor(actorId).call(input, {
-      timeoutSecs,
-      memoryMbytes,
-    });
+    // Note: Don't pass timeout/memory options - they cause errors with some actors
+    const run = await apifyClient.actor(actorId).call(input);
 
     const { items } = await apifyClient.dataset(run.defaultDatasetId).listItems();
 
@@ -88,14 +101,53 @@ export async function runActorWithRetry(actorId, input, maxRetries = 3) {
 }
 
 /**
+ * Run an actor with automatic fallback to alternative actors
+ * @param {string} platform - The platform name (instagram, tiktok, etc.)
+ * @param {object} input - Input configuration for the actor
+ * @param {object} options - Additional options
+ * @returns {Promise<Array>} - Array of results from the actor
+ */
+export async function runActorWithFallback(platform, input, options = {}) {
+  // Get the current active actor for this platform
+  let actorId = getActiveActor(platform);
+
+  try {
+    // Try the primary/current actor
+    return await runActorWithRetry(actorId, input, 2);
+  } catch (primaryError) {
+    console.log(`⚠️ Primary actor ${actorId} failed, searching for alternative...`);
+
+    try {
+      // Find a working alternative
+      const workingActor = await getWorkingActorForPlatform(platform);
+
+      if (workingActor && workingActor !== actorId) {
+        console.log(`  🔄 Trying alternative actor: ${workingActor}`);
+        setActorOverride(platform, workingActor);
+
+        // Try the alternative
+        const results = await runActorWithRetry(workingActor, input, 2);
+        console.log(`  ✅ Alternative actor ${workingActor} succeeded!`);
+        return results;
+      }
+    } catch (fallbackError) {
+      console.log(`  ❌ Fallback also failed: ${fallbackError.message}`);
+    }
+
+    // If all else fails, throw the original error
+    throw primaryError;
+  }
+}
+
+/**
  * Actor IDs for each platform
  */
 export const ACTOR_IDS = {
-  instagram: 'apify/instagram-profile-scraper',
+  instagram: 'apify/instagram-scraper',
   tiktok: 'clockworks/tiktok-scraper',
   youtube: 'streamers/youtube-channel-scraper',
   twitter: 'apidojo/tweet-scraper',
-  linkedin: 'anchor/linkedin-profile-scraper',
+  linkedin: 'curious_coder/linkedin-profile-scraper',
   reddit: 'trudax/reddit-scraper',
   webScraper: 'apify/web-scraper',
 };

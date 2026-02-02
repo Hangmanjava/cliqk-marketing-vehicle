@@ -1,9 +1,26 @@
-import { runActorWithRetry, ACTOR_IDS } from '../services/apify-client.js';
+import { runActorWithRetry } from '../services/apify-client.js';
 import { accounts } from '../config/accounts.js';
 
 /**
  * Scrape YouTube channel data using Apify
+ * Actor: streamers/youtube-channel-scraper
  */
+
+const ACTOR_ID = 'streamers/youtube-channel-scraper';
+
+// Filter posts from the last 7 days
+const DAYS_TO_SCRAPE = 7;
+
+/**
+ * Check if a date is within the last N days
+ */
+function isWithinDays(dateStr, days) {
+  if (!dateStr) return false;
+  const postDate = new Date(dateStr);
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
+  return postDate >= cutoff;
+}
 
 /**
  * Scrape all YouTube accounts
@@ -16,66 +33,66 @@ export async function scrapeYouTube() {
     try {
       console.log(`Scraping YouTube: @${account.handle}`);
 
-      const data = await runActorWithRetry(ACTOR_IDS.youtube, {
-        channelUrls: [account.url],
-        maxVideos: 12,
-        maxComments: 50,
+      const data = await runActorWithRetry(ACTOR_ID, {
+        startUrls: [{ url: account.url }],
+        maxResults: 30, // Get more videos to filter by date
+        maxResultsShorts: 20,
       });
 
       if (data && data.length > 0) {
-        // Find channel info
-        const channelData = data.find(item => item.subscriberCount !== undefined) || data[0];
+        // Get channel info from first item with subscriber data
+        const channelData = data.find(item => item.numberOfSubscribers !== undefined) || data[0];
 
-        // Get video data
-        const videos = data.filter(item => item.viewCount !== undefined);
-        const totalViews = videos.reduce((sum, video) => sum + (video.viewCount || 0), 0);
-        const totalLikes = videos.reduce((sum, video) => sum + (video.likeCount || 0), 0);
-        const totalComments = videos.reduce((sum, video) => sum + (video.commentCount || 0), 0);
+        // Filter videos from the last 7 days
+        const recentVideos = data.filter(item =>
+          item.viewCount !== undefined &&
+          isWithinDays(item.uploadDate || item.publishedAt || item.date, DAYS_TO_SCRAPE)
+        );
 
-        // Collect video titles and descriptions for sentiment analysis
-        const postCaptions = videos
-          .map(video => `${video.title || ''} ${video.description || ''}`.trim())
-          .filter(text => text.length > 0);
+        console.log(`  📅 Found ${recentVideos.length}/${data.filter(i => i.viewCount !== undefined).length} videos in last ${DAYS_TO_SCRAPE} days`);
 
-        // Collect comments for sentiment analysis
-        const comments = videos
-          .flatMap(video => video.comments || [])
-          .map(comment => comment.text || comment.content || '')
-          .filter(text => text.length > 0)
-          .slice(0, 100); // Limit to 100 comments
+        // Calculate totals from recent videos
+        let totalViews = 0;
+        const postCaptions = [];
+
+        for (const item of recentVideos) {
+          totalViews += item.viewCount || 0;
+
+          if (item.title) {
+            postCaptions.push(item.title);
+          }
+        }
 
         results.push({
           platform: 'youtube',
           handle: account.handle,
           url: account.url,
-          subscribers: channelData.subscriberCount || 0,
+          subscribers: channelData.numberOfSubscribers || 0,
+          channelTotalViews: channelData.channelTotalViews || 0,
           impressions: totalViews, // YouTube views = impressions
-          engagement: totalLikes + totalComments,
-          likes: totalLikes,
-          comments: totalComments,
-          videoCount: videos.length,
+          engagement: 0, // Likes not available in this scraper
+          videoCount: channelData.channelTotalVideos || 0,
           postCaptions,
-          audienceComments: comments,
+          audienceComments: [],
           scrapedAt: new Date().toISOString(),
         });
+
+        console.log(`  ✓ ${account.handle}: ${totalViews.toLocaleString()} views, ${channelData.numberOfSubscribers?.toLocaleString()} subscribers`);
       } else {
-        results.push(createEmptyResult('youtube', account));
+        results.push(createEmptyResult(account));
       }
     } catch (error) {
-      console.error(`Failed to scrape YouTube @${account.handle}:`, error.message);
-      results.push(createEmptyResult('youtube', account, error.message));
+      console.error(`  ✗ Failed @${account.handle}:`, error.message);
+      results.push(createEmptyResult(account, error.message));
     }
   }
 
   return results;
 }
 
-/**
- * Create an empty result for failed scrapes
- */
-function createEmptyResult(platform, account, error = null) {
+function createEmptyResult(account, error = null) {
   return {
-    platform,
+    platform: 'youtube',
     handle: account.handle,
     url: account.url,
     subscribers: 0,

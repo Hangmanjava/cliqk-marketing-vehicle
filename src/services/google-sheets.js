@@ -123,8 +123,8 @@ export async function updateSummarySheet(summary) {
 }
 
 /**
- * Update the sentiment sheet with per-account sentiment data
- * @param {Array} sentimentData - Array of sentiment results
+ * Update the sentiment sheet with per-platform sentiment data (aggregated)
+ * @param {Array} sentimentData - Array of sentiment results per account
  */
 export async function updateSentimentSheet(sentimentData) {
   const sheetsClient = getSheetsClient();
@@ -132,15 +132,51 @@ export async function updateSentimentSheet(sentimentData) {
 
   const weekDate = getWeekStartDate();
 
-  const rows = sentimentData.map(item => [
-    weekDate,
-    item.platform,
-    item.handle,
-    item.contentSentiment?.score || 0,
-    item.contentSentiment?.label || 'N/A',
-    item.audienceSentiment?.score || 0,
-    item.audienceSentiment?.label || 'N/A',
-  ]);
+  // Aggregate sentiment by platform
+  const platformSentiment = {};
+
+  for (const item of sentimentData) {
+    const platform = item.platform;
+    if (!platformSentiment[platform]) {
+      platformSentiment[platform] = {
+        contentScores: [],
+        audienceScores: [],
+        accountCount: 0,
+      };
+    }
+
+    platformSentiment[platform].accountCount++;
+
+    if (item.contentSentiment?.score !== undefined) {
+      platformSentiment[platform].contentScores.push(item.contentSentiment.score);
+    }
+    if (item.audienceSentiment?.score !== undefined) {
+      platformSentiment[platform].audienceScores.push(item.audienceSentiment.score);
+    }
+  }
+
+  // Calculate averages and create rows
+  const rows = Object.entries(platformSentiment).map(([platform, data]) => {
+    const avgContentScore = data.contentScores.length > 0
+      ? data.contentScores.reduce((a, b) => a + b, 0) / data.contentScores.length
+      : 0;
+    const avgAudienceScore = data.audienceScores.length > 0
+      ? data.audienceScores.reduce((a, b) => a + b, 0) / data.audienceScores.length
+      : 0;
+
+    const contentLabel = avgContentScore > 0.2 ? 'Positive' : avgContentScore < -0.2 ? 'Negative' : 'Neutral';
+    const audienceLabel = avgAudienceScore > 0.2 ? 'Positive' : avgAudienceScore < -0.2 ? 'Negative' : 'Neutral';
+
+    return [
+      weekDate,
+      platform,
+      data.accountCount, // Number of accounts in this platform
+      Math.round(avgContentScore * 100) / 100,
+      contentLabel,
+      Math.round(avgAudienceScore * 100) / 100,
+      audienceLabel,
+    ];
+  });
 
   await sheetsClient.spreadsheets.values.append({
     spreadsheetId: sheetId,
@@ -151,7 +187,7 @@ export async function updateSentimentSheet(sentimentData) {
     },
   });
 
-  console.log(`Updated Sentiment sheet with ${rows.length} rows`);
+  console.log(`Updated Sentiment sheet with ${rows.length} platform rows`);
 }
 
 /**
@@ -286,11 +322,56 @@ export async function getRawDataForWeek(weekDate) {
 }
 
 /**
+ * Create sheets if they don't exist
+ */
+async function ensureSheetsExist() {
+  const sheetsClient = getSheetsClient();
+  const sheetId = getSheetId();
+
+  const requiredSheets = ['Raw Data', 'Summary', 'Sentiment', 'Video Analysis'];
+
+  try {
+    // Get existing sheets
+    const spreadsheet = await sheetsClient.spreadsheets.get({
+      spreadsheetId: sheetId,
+    });
+
+    const existingSheets = spreadsheet.data.sheets.map(s => s.properties.title);
+
+    // Find sheets that need to be created
+    const sheetsToCreate = requiredSheets.filter(name => !existingSheets.includes(name));
+
+    if (sheetsToCreate.length > 0) {
+      console.log(`Creating sheets: ${sheetsToCreate.join(', ')}`);
+
+      await sheetsClient.spreadsheets.batchUpdate({
+        spreadsheetId: sheetId,
+        requestBody: {
+          requests: sheetsToCreate.map(title => ({
+            addSheet: {
+              properties: { title },
+            },
+          })),
+        },
+      });
+
+      console.log('Sheets created successfully');
+    }
+  } catch (error) {
+    console.error('Error ensuring sheets exist:', error.message);
+    throw error;
+  }
+}
+
+/**
  * Initialize sheet headers if they don't exist
  */
 export async function initializeSheetHeaders() {
   const sheetsClient = getSheetsClient();
   const sheetId = getSheetId();
+
+  // First ensure all required sheets exist
+  await ensureSheetsExist();
 
   // Raw Data headers
   const rawDataHeaders = [
@@ -306,9 +387,9 @@ export async function initializeSheetHeaders() {
     'Audience Sentiment Score', 'Audience Sentiment Label'
   ];
 
-  // Sentiment headers
+  // Sentiment headers (aggregated by platform)
   const sentimentHeaders = [
-    'Week', 'Platform', 'Handle', 'Content Score', 'Content Label',
+    'Week', 'Platform', 'Accounts', 'Content Score', 'Content Label',
     'Audience Score', 'Audience Label'
   ];
 
@@ -319,73 +400,39 @@ export async function initializeSheetHeaders() {
   ];
 
   try {
-    // Check if headers exist, if not add them
-    const rawCheck = await sheetsClient.spreadsheets.values.get({
+    // Add headers to each sheet
+    await sheetsClient.spreadsheets.values.update({
       spreadsheetId: sheetId,
       range: 'Raw Data!A1:M1',
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: [rawDataHeaders] },
     });
 
-    if (!rawCheck.data.values || rawCheck.data.values.length === 0) {
-      await sheetsClient.spreadsheets.values.update({
-        spreadsheetId: sheetId,
-        range: 'Raw Data!A1:M1',
-        valueInputOption: 'USER_ENTERED',
-        requestBody: { values: [rawDataHeaders] },
-      });
-    }
-
-    const summaryCheck = await sheetsClient.spreadsheets.values.get({
+    await sheetsClient.spreadsheets.values.update({
       spreadsheetId: sheetId,
       range: 'Summary!A1:P1',
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: [summaryHeaders] },
     });
 
-    if (!summaryCheck.data.values || summaryCheck.data.values.length === 0) {
-      await sheetsClient.spreadsheets.values.update({
-        spreadsheetId: sheetId,
-        range: 'Summary!A1:P1',
-        valueInputOption: 'USER_ENTERED',
-        requestBody: { values: [summaryHeaders] },
-      });
-    }
-
-    const sentimentCheck = await sheetsClient.spreadsheets.values.get({
+    await sheetsClient.spreadsheets.values.update({
       spreadsheetId: sheetId,
       range: 'Sentiment!A1:G1',
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: [sentimentHeaders] },
     });
 
-    if (!sentimentCheck.data.values || sentimentCheck.data.values.length === 0) {
-      await sheetsClient.spreadsheets.values.update({
-        spreadsheetId: sheetId,
-        range: 'Sentiment!A1:G1',
-        valueInputOption: 'USER_ENTERED',
-        requestBody: { values: [sentimentHeaders] },
-      });
-    }
-
-    // Video Analysis sheet
-    try {
-      const videoCheck = await sheetsClient.spreadsheets.values.get({
-        spreadsheetId: sheetId,
-        range: 'Video Analysis!A1:J1',
-      });
-
-      if (!videoCheck.data.values || videoCheck.data.values.length === 0) {
-        await sheetsClient.spreadsheets.values.update({
-          spreadsheetId: sheetId,
-          range: 'Video Analysis!A1:J1',
-          valueInputOption: 'USER_ENTERED',
-          requestBody: { values: [videoAnalysisHeaders] },
-        });
-      }
-    } catch {
-      // Sheet might not exist yet - that's okay
-    }
+    await sheetsClient.spreadsheets.values.update({
+      spreadsheetId: sheetId,
+      range: 'Video Analysis!A1:J1',
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: [videoAnalysisHeaders] },
+    });
 
     console.log('Sheet headers initialized');
   } catch (error) {
     console.error('Error initializing headers:', error.message);
-    // Headers might not exist if sheets aren't created yet
-    // This is expected on first run
+    throw error;
   }
 }
 
@@ -399,4 +446,132 @@ function getWeekStartDate() {
   const startOfWeek = new Date(now);
   startOfWeek.setDate(now.getDate() - dayOfWeek);
   return startOfWeek.toISOString().split('T')[0];
+}
+
+/**
+ * Get LinkedIn impressions from the form responses (first sheet)
+ * The form collects: Timestamp, Email, Name, LinkedIn Handle, Impressions
+ * @returns {Promise<Array>} Array of { name, handle, impressions, email, timestamp }
+ */
+export async function getLinkedInFormResponses() {
+  const sheetsClient = getSheetsClient();
+  const sheetId = getSheetId();
+
+  try {
+    // Get all sheets to find the first one (form responses)
+    const spreadsheet = await sheetsClient.spreadsheets.get({
+      spreadsheetId: sheetId,
+    });
+
+    const firstSheet = spreadsheet.data.sheets[0]?.properties?.title;
+    if (!firstSheet) {
+      console.log('No sheets found in spreadsheet');
+      return [];
+    }
+
+    console.log(`Reading LinkedIn data from sheet: "${firstSheet}"`);
+
+    // Read data from first sheet
+    const response = await sheetsClient.spreadsheets.values.get({
+      spreadsheetId: sheetId,
+      range: `'${firstSheet}'!A:Z`,
+    });
+
+    const rows = response.data.values || [];
+
+    if (rows.length < 2) {
+      console.log('No LinkedIn form responses found');
+      return [];
+    }
+
+    // Get header row to understand column positions
+    const headers = rows[0].map(h => h?.toString().toLowerCase().trim() || '');
+
+    // Find relevant columns
+    const timestampCol = headers.findIndex(h => h.includes('timestamp') || h.includes('date') || h.includes('time'));
+    const emailCol = headers.findIndex(h => h.includes('email'));
+    const nameCol = headers.findIndex(h => h.includes('name') && !h.includes('username'));
+
+    // LinkedIn column could be the impressions (if named "linkedin") or a separate "impressions" column
+    let impressionsCol = headers.findIndex(h => h.includes('impression') || h.includes('views'));
+    if (impressionsCol === -1) {
+      // Check if there's a column named just "linkedin" which likely contains impressions
+      impressionsCol = headers.findIndex(h => h === 'linkedin');
+    }
+
+    // Handle column is separate from impressions
+    const handleCol = headers.findIndex(h => h.includes('handle') || h.includes('username'));
+
+    console.log(`  Found columns - timestamp:${timestampCol}, email:${emailCol}, name:${nameCol}, handle:${handleCol}, impressions:${impressionsCol}`);
+
+    // Get start of current week (Saturday when form is sent)
+    const now = new Date();
+    const dayOfWeek = now.getDay();
+    // Saturday is day 6, so calculate days since last Saturday
+    const daysSinceSaturday = (dayOfWeek + 1) % 7;
+    const saturdayThisWeek = new Date(now);
+    saturdayThisWeek.setDate(now.getDate() - daysSinceSaturday);
+    saturdayThisWeek.setHours(0, 0, 0, 0);
+
+    // Get start of last week (for fallback if no current week data)
+    const saturdayLastWeek = new Date(saturdayThisWeek);
+    saturdayLastWeek.setDate(saturdayLastWeek.getDate() - 7);
+
+    const results = [];
+    const resultsLastWeek = [];
+
+    // Process data rows (skip header)
+    for (let i = 1; i < rows.length; i++) {
+      const row = rows[i];
+
+      const timestamp = timestampCol >= 0 ? row[timestampCol] : null;
+      let submissionDate = null;
+
+      if (timestamp) {
+        submissionDate = new Date(timestamp);
+      }
+
+      // Parse impressions - handle various formats
+      const impressionsValue = impressionsCol >= 0 ? row[impressionsCol] : null;
+      let impressions = 0;
+
+      if (impressionsValue) {
+        // Remove non-numeric characters except digits
+        const numericStr = impressionsValue.toString().replace(/[^0-9]/g, '');
+        impressions = parseInt(numericStr, 10) || 0;
+
+        // If it looks like a URL or name (no valid number), set to 0
+        if (impressionsValue.includes('http') || impressionsValue.includes('linkedin.com')) {
+          impressions = 0;
+        }
+      }
+
+      const entry = {
+        timestamp: timestamp || '',
+        email: (emailCol >= 0 ? row[emailCol] : '').trim(),
+        name: (nameCol >= 0 ? row[nameCol] : '').trim(),
+        handle: handleCol >= 0 ? row[handleCol] : '',
+        impressions,
+      };
+
+      // Categorize by week
+      if (submissionDate && submissionDate >= saturdayThisWeek) {
+        results.push(entry);
+      } else if (submissionDate && submissionDate >= saturdayLastWeek) {
+        resultsLastWeek.push(entry);
+      }
+    }
+
+    // If no current week data, use last week's data
+    if (results.length === 0 && resultsLastWeek.length > 0) {
+      console.log(`  No current week submissions, using last week's data (${resultsLastWeek.length} entries)`);
+      return resultsLastWeek;
+    }
+
+    console.log(`  Found ${results.length} LinkedIn submissions this week`);
+    return results;
+  } catch (error) {
+    console.error('Error reading LinkedIn form responses:', error.message);
+    return [];
+  }
 }

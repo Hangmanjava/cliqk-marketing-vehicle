@@ -18,7 +18,8 @@ export function generateReport(data) {
     comparison,
     sentiment,
     sentimentComparison,
-    tiktokVideoAnalyses,
+    allVideoAnalyses,
+    rawData,
     sheetUrl,
   } = data;
 
@@ -87,34 +88,42 @@ export function generateReport(data) {
   }
   lines.push('');
 
-  // TikTok Video Analysis
-  if (tiktokVideoAnalyses && tiktokVideoAnalyses.length > 0) {
-    const hasAnalyzedVideos = tiktokVideoAnalyses.some(a => a.videosAnalyzed > 0);
+  // Video Analysis (TikTok + Instagram Reels)
+  if (allVideoAnalyses && allVideoAnalyses.length > 0) {
+    const tiktokAnalyses = allVideoAnalyses.filter(a => a.platform === 'tiktok' && a.videosAnalyzed > 0);
+    const instagramAnalyses = allVideoAnalyses.filter(a => a.platform === 'instagram' && a.videosAnalyzed > 0);
 
-    if (hasAnalyzedVideos) {
-      lines.push('**TIKTOK VIDEO ANALYSIS (Last 7 Days):**');
+    if (tiktokAnalyses.length > 0) {
+      lines.push('**TIKTOK VIDEO ANALYSIS:**');
+      for (const analysis of tiktokAnalyses) {
+        lines.push(...formatVideoAnalysis(analysis));
+      }
+      lines.push('');
+    }
 
-      for (const analysis of tiktokVideoAnalyses) {
-        if (analysis.videosAnalyzed === 0) {
-          lines.push(`• @${analysis.handle}: No videos this week`);
-          continue;
-        }
+    if (instagramAnalyses.length > 0) {
+      lines.push('**INSTAGRAM REELS ANALYSIS:**');
+      for (const analysis of instagramAnalyses) {
+        lines.push(...formatVideoAnalysis(analysis));
+      }
+      lines.push('');
+    }
+  }
 
-        const hookEmoji = analysis.avgHookScore >= 7 ? '🔥' : analysis.avgHookScore >= 5 ? '👍' : '⚠️';
-        const viralEmoji = analysis.avgViralityScore >= 7 ? '🚀' : analysis.avgViralityScore >= 5 ? '📈' : '📉';
+  // LinkedIn Submission Status
+  const linkedInData = rawData?.filter(a => a.platform === 'linkedin') || [];
+  const linkedInSubmitted = linkedInData.filter(a => a.submitted);
+  const linkedInNotSubmitted = linkedInData.filter(a => !a.submitted && a.type === 'profile');
 
-        lines.push(`• @${analysis.handle}: ${analysis.videosAnalyzed} videos analyzed`);
-        lines.push(`  ${hookEmoji} Hook Score: ${analysis.avgHookScore}/10 | ${viralEmoji} Virality: ${analysis.avgViralityScore}/10`);
-
-        // Show best video summary if available
-        if (analysis.topVideos && analysis.topVideos.length > 0 && analysis.topVideos[0].summary) {
-          lines.push(`  Best video: "${analysis.topVideos[0].summary}"`);
-        }
-
-        // Show top improvement tip
-        if (analysis.commonIssues && analysis.commonIssues.length > 0) {
-          lines.push(`  Tip: ${analysis.commonIssues[0]}`);
-        }
+  if (linkedInData.length > 0) {
+    const totalLinkedInImpressions = linkedInData.reduce((sum, a) => sum + (a.impressions || 0), 0);
+    if (totalLinkedInImpressions > 0) {
+      lines.push('**LINKEDIN SUBMISSIONS:**');
+      lines.push(`• Total: ${formatNumber(totalLinkedInImpressions)} impressions from ${linkedInSubmitted.length} team members`);
+      if (linkedInNotSubmitted.length > 0) {
+        const names = linkedInNotSubmitted.slice(0, 3).map(a => a.name).join(', ');
+        const more = linkedInNotSubmitted.length > 3 ? ` +${linkedInNotSubmitted.length - 3} more` : '';
+        lines.push(`• Not yet submitted: ${names}${more}`);
       }
       lines.push('');
     }
@@ -189,6 +198,28 @@ export function generateSlackSummary(data) {
   }
 
   return lines.join('\n');
+}
+
+/**
+ * Format video analysis for report
+ */
+function formatVideoAnalysis(analysis) {
+  const lines = [];
+  const hookEmoji = analysis.avgHookScore >= 7 ? '🔥' : analysis.avgHookScore >= 5 ? '👍' : '⚠️';
+  const viralEmoji = analysis.avgViralityScore >= 7 ? '🚀' : analysis.avgViralityScore >= 5 ? '📈' : '📉';
+
+  lines.push(`• @${analysis.handle}: ${analysis.videosAnalyzed} videos`);
+  lines.push(`  ${hookEmoji} Hook: ${analysis.avgHookScore}/10 | ${viralEmoji} Virality: ${analysis.avgViralityScore}/10`);
+
+  if (analysis.topVideos?.length > 0 && analysis.topVideos[0].summary) {
+    lines.push(`  Best: "${analysis.topVideos[0].summary}"`);
+  }
+
+  if (analysis.commonIssues?.length > 0) {
+    lines.push(`  Tip: ${analysis.commonIssues[0]}`);
+  }
+
+  return lines;
 }
 
 /**
