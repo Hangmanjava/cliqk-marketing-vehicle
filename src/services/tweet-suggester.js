@@ -60,7 +60,7 @@ export async function fetchIliasData() {
 export function analyzeStyle(tweets) {
   if (!tweets || tweets.length === 0) {
     return {
-      avgLength: 150,
+      avgLength: 240,
       usesHashtags: false,
       usesEmojis: false,
       usesQuestions: false,
@@ -194,7 +194,7 @@ export async function generateSuggestions(iliasData, styleProfile) {
 ${recentTweets}
 
 ## His style patterns:
-- Length: ~${styleProfile.avgLength} chars (he's concise)
+- Length: AIM FOR 200-280 CHARACTERS. Develop the thought fully, don't be too brief.
 - Tone: ${styleProfile.tone}, direct, no fluff
 - Topics: ${styleProfile.topics.join(', ') || 'distribution, content, creators'}
 - He runs Cliqk (social media analytics for creators)
@@ -221,6 +221,7 @@ IMPORTANT:
 - Each tweet must sound like it came from his keyboard, not ChatGPT
 - Reference specific things (platforms, features, numbers) not vague concepts
 - If you can't tell it apart from his real tweets, you did it right
+- TWEETS MUST BE 200-280 CHARACTERS. Short tweets under 150 chars are rejected. Develop the idea fully.
 
 ## Output JSON:
 {
