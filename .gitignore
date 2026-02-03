@@ -31,3 +31,6 @@ tmp/
 temp/
 .vercel
 temp-twitter-tastemakers/
+
+# Lambda build artifacts
+lambda-package.zip

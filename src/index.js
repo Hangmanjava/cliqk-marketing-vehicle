@@ -202,5 +202,11 @@ async function main() {
   }
 }
 
-// Run main function
-main();
+// Export main function for Lambda
+export { main as generateWeeklyReport };
+
+// Run main function if called directly (not imported)
+const isMainModule = import.meta.url === `file://${process.argv[1]}`;
+if (isMainModule) {
+  main();
+}

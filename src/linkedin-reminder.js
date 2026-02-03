@@ -246,20 +246,26 @@ async function sendReminder() {
   }
 }
 
-// Main execution
-const mode = process.argv[2] || 'initial';
+// Export functions for Lambda
+export { sendInitialRequest, sendReminder };
 
-if (mode === 'initial') {
-  sendInitialRequest().catch(err => {
-    console.error(err);
+// Main execution when run directly
+const isMainModule = import.meta.url === `file://${process.argv[1]}`;
+if (isMainModule) {
+  const mode = process.argv[2] || 'initial';
+
+  if (mode === 'initial') {
+    sendInitialRequest().catch(err => {
+      console.error(err);
+      process.exit(1);
+    });
+  } else if (mode === 'reminder') {
+    sendReminder().catch(err => {
+      console.error(err);
+      process.exit(1);
+    });
+  } else {
+    console.error('Usage: node src/linkedin-reminder.js [initial|reminder]');
     process.exit(1);
-  });
-} else if (mode === 'reminder') {
-  sendReminder().catch(err => {
-    console.error(err);
-    process.exit(1);
-  });
-} else {
-  console.error('Usage: node src/linkedin-reminder.js [initial|reminder]');
-  process.exit(1);
+  }
 }
