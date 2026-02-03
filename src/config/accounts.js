@@ -25,6 +25,7 @@ export const accounts = {
     { handle: 'cliqkclips', url: 'https://www.youtube.com/@cliqkclips' },
     { handle: 'cliqkcreators', url: 'https://www.youtube.com/@cliqkcreators' },
     { handle: 'iliasanwar_', url: 'https://www.youtube.com/@iliasanwar_' },
+    { handle: 'cliqkbrandon', url: 'https://www.youtube.com/@cliqkbrandon' },
   ],
 
   twitter: [
