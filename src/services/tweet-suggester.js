@@ -1,11 +1,34 @@
 /**
  * Tweet Suggester Service
- * Generates daily tweet suggestions for @iliasanwar_ based on style analysis
+ * Generates daily tweet suggestions based on style analysis
+ * Supports multiple team members
  */
 
 import OpenAI from 'openai';
 
 const DASHBOARD_DATA_URL = 'https://www.cliqksocials.com/data.json';
+
+// Team member configurations
+export const TEAM_MEMBERS = {
+  ilias: {
+    name: 'Ilias',
+    twitterHandle: 'iliasanwar_',
+    slackUserId: 'U09LPE3QR97',
+    role: 'Co-Founder and CMO of Cliqk',
+    topics: ['distribution', 'creators', 'growth', 'content', 'marketing'],
+    context: 'He runs Cliqk (social media analytics for creators). Building in public, growing Cliqk. Audience: creators, founders, marketers.'
+  },
+  rohan: {
+    name: 'Rohan',
+    twitterHandle: 'rohangurram',
+    slackUserId: 'U0963DX3S2K',
+    role: 'Founder-led branding expert at Cliqk',
+    topics: ['founder-led branding', 'personal brand', 'thought leadership', 'LinkedIn growth', 'executive presence'],
+    context: 'He focuses on founder-led branding and helping founders grow their personal brand. Building in public. Audience: founders, CEOs, executives looking to build their personal brand.'
+  }
+};
+
+// Default to Ilias for backwards compatibility
 const TARGET_HANDLE = 'iliasanwar_';
 
 /**
@@ -19,10 +42,11 @@ function getOpenAIClient() {
 }
 
 /**
- * Fetch Ilias's Twitter data from the deployed dashboard
+ * Fetch Twitter data from the deployed dashboard for a specific person
  */
-export async function fetchIliasData() {
-  console.log('📥 Fetching data from dashboard...');
+export async function fetchPersonData(person) {
+  const handle = person.twitterHandle;
+  console.log(`📥 Fetching data for @${handle} from dashboard...`);
 
   const response = await fetch(DASHBOARD_DATA_URL);
   if (!response.ok) {
@@ -31,27 +55,34 @@ export async function fetchIliasData() {
 
   const data = await response.json();
 
-  // Find Ilias's Twitter account
-  const iliasAccount = data.accounts?.find(
-    acc => acc.platform === 'twitter' && acc.handle === TARGET_HANDLE
+  // Find the person's Twitter account
+  const twitterAccount = data.accounts?.find(
+    acc => acc.platform === 'twitter' && acc.handle === handle
   );
 
-  if (!iliasAccount) {
-    throw new Error(`Twitter account @${TARGET_HANDLE} not found in dashboard data`);
+  if (!twitterAccount) {
+    throw new Error(`Twitter account @${handle} not found in dashboard data`);
   }
 
   // Also get data from other platforms for context
-  const allIliasAccounts = data.accounts?.filter(
-    acc => acc.handle === TARGET_HANDLE || acc.handle?.toLowerCase().includes('ilias')
+  const allAccounts = data.accounts?.filter(
+    acc => acc.handle === handle || acc.handle?.toLowerCase().includes(person.name.toLowerCase())
   );
 
-  console.log(`✅ Found @${TARGET_HANDLE} with ${iliasAccount.postCaptions?.length || 0} recent tweets`);
+  console.log(`✅ Found @${handle} with ${twitterAccount.postCaptions?.length || 0} recent tweets`);
 
   return {
-    twitter: iliasAccount,
-    allPlatforms: allIliasAccounts,
+    twitter: twitterAccount,
+    allPlatforms: allAccounts,
     generatedAt: data.generatedAt
   };
+}
+
+/**
+ * Fetch Ilias's Twitter data from the deployed dashboard (backwards compatible)
+ */
+export async function fetchIliasData() {
+  return fetchPersonData(TEAM_MEMBERS.ilias);
 }
 
 /**
@@ -171,56 +202,56 @@ async function fetchCurrentContext() {
 }
 
 /**
- * Generate 5 tweet suggestions using OpenAI
+ * Generate 5 tweet suggestions using OpenAI for a specific person
  */
-export async function generateSuggestions(iliasData, styleProfile) {
-  console.log('🤖 Generating tweet suggestions with AI...');
+export async function generateSuggestionsForPerson(personData, styleProfile, person) {
+  console.log(`🤖 Generating tweet suggestions for ${person.name} with AI...`);
 
   const openai = getOpenAIClient();
   const currentContext = await fetchCurrentContext();
 
-  const recentTweets = iliasData.twitter.postCaptions?.slice(0, 10).join('\n\n') || 'No recent tweets available';
+  const recentTweets = personData.twitter.postCaptions?.slice(0, 10).join('\n\n') || 'No recent tweets available';
 
-  const prompt = `You are ghostwriting tweets for Ilias (@iliasanwar_), founder of Cliqk - a social media analytics tool.
+  const prompt = `You are ghostwriting tweets for ${person.name} (@${person.twitterHandle}), ${person.role}.
 
-## CRITICAL: Sound like Ilias, NOT like AI
+## CRITICAL: Sound like ${person.name}, NOT like AI
 - NO generic motivational fluff ("unlock your potential", "game-changer", "here's the thing")
-- NO numbered lists or "Thread 🧵" formats unless he actually uses them
+- NO numbered lists or "Thread 🧵" formats unless they actually use them
 - NO excessive emojis or hashtags
 - Write like a real person texting a friend about business
 - Be specific, not vague. Use real numbers, real examples, real observations.
 
-## Ilias's ACTUAL recent tweets (copy his exact voice):
+## ${person.name}'s ACTUAL recent tweets (copy their exact voice):
 ${recentTweets}
 
-## His style patterns:
+## Their style patterns:
 - Length: AIM FOR 200-280 CHARACTERS. Develop the thought fully, don't be too brief.
 - Tone: ${styleProfile.tone}, direct, no fluff
-- Topics: ${styleProfile.topics.join(', ') || 'distribution, content, creators'}
-- He runs Cliqk (social media analytics for creators)
+- Topics: ${styleProfile.topics.join(', ') || person.topics.join(', ')}
+- ${person.context}
 - ${styleProfile.usesEmojis ? 'Sometimes uses emojis' : 'Rarely uses emojis'}
 - ${styleProfile.usesHashtags ? 'Sometimes uses hashtags' : 'Almost never uses hashtags'}
 
 ## Current events to potentially reference:
 ${currentContext}
 
-## His account context:
-- ${iliasData.twitter.followers?.toLocaleString() || '~1.3K'} followers, ${iliasData.twitter.impressions?.toLocaleString() || '100K+'} impressions
-- Building in public, growing Cliqk
-- Audience: creators, founders, marketers
+## Their account context:
+- ${personData.twitter.followers?.toLocaleString() || '~1K'} followers, ${personData.twitter.impressions?.toLocaleString() || '50K+'} impressions
+- Building in public
+- Audience: founders, builders, tech enthusiasts
 
-## Generate 5 tweets that sound EXACTLY like Ilias wrote them:
+## Generate 5 tweets that sound EXACTLY like ${person.name} wrote them:
 
-1. **Contrarian take** - Challenge something everyone believes about content/social
-2. **Specific insight** - Something he noticed from Cliqk data or his own experience (make up a believable specific stat)
-3. **Question** - Genuine question he'd ask his audience (not engagement bait)
-4. **Real observation** - Something happening right now in creator/social space
-5. **Personal update style** - How he'd share a Cliqk win or learning
+1. **Contrarian take** - Challenge something everyone believes about content/social/tech
+2. **Specific insight** - Something they noticed from data or their own experience (make up a believable specific stat)
+3. **Question** - Genuine question they'd ask their audience (not engagement bait)
+4. **Real observation** - Something happening right now in tech/creator space
+5. **Personal update style** - How they'd share a win or learning
 
 IMPORTANT:
-- Each tweet must sound like it came from his keyboard, not ChatGPT
+- Each tweet must sound like it came from their keyboard, not ChatGPT
 - Reference specific things (platforms, features, numbers) not vague concepts
-- If you can't tell it apart from his real tweets, you did it right
+- If you can't tell it apart from their real tweets, you did it right
 - TWEETS MUST BE 200-280 CHARACTERS. Short tweets under 150 chars are rejected. Develop the idea fully.
 
 ## Output JSON:
@@ -229,7 +260,7 @@ IMPORTANT:
     {
       "type": "Contrarian Take",
       "tweet": "exact tweet text",
-      "why": "why this matches his style and would perform",
+      "why": "why this matches their style and would perform",
       "charCount": 123
     }
   ]
@@ -260,9 +291,16 @@ IMPORTANT:
 }
 
 /**
- * Format suggestions for Slack
+ * Generate 5 tweet suggestions using OpenAI (backwards compatible - for Ilias)
  */
-export function formatForSlack(suggestions, iliasData) {
+export async function generateSuggestions(iliasData, styleProfile) {
+  return generateSuggestionsForPerson(iliasData, styleProfile, TEAM_MEMBERS.ilias);
+}
+
+/**
+ * Format suggestions for Slack for a specific person
+ */
+export function formatForSlackPerson(suggestions, personData, person) {
   const now = new Date();
   const dateStr = now.toLocaleDateString('en-US', {
     weekday: 'long',
@@ -276,15 +314,20 @@ export function formatForSlack(suggestions, iliasData) {
 
   const typeEmojis = {
     'Hot Take': '🔥',
+    'Contrarian Take': '🔥',
     'Value Tip': '💡',
+    'Specific Insight': '💡',
     'Engagement Hook': '💬',
+    'Question': '💬',
     'Observation': '👀',
-    'Thread Starter': '🧵'
+    'Real Observation': '👀',
+    'Thread Starter': '🧵',
+    'Personal Update Style': '✨'
   };
 
-  let message = `*🐦 Daily Tweet Suggestions for @${TARGET_HANDLE}*\n`;
+  let message = `*🐦 Daily Tweet Suggestions for @${person.twitterHandle}*\n`;
   message += `_Generated: ${dateStr} ET_\n`;
-  message += `_Based on ${iliasData.twitter.postCaptions?.length || 0} recent tweets_\n\n`;
+  message += `_Based on ${personData.twitter.postCaptions?.length || 0} recent tweets_\n\n`;
   message += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
   suggestions.forEach((suggestion, index) => {
@@ -306,17 +349,23 @@ export function formatForSlack(suggestions, iliasData) {
 }
 
 /**
- * Send direct message to Ilias via Slack Bot API
+ * Format suggestions for Slack (backwards compatible - for Ilias)
  */
-export async function sendToSlack(message) {
+export function formatForSlack(suggestions, iliasData) {
+  return formatForSlackPerson(suggestions, iliasData, TEAM_MEMBERS.ilias);
+}
+
+/**
+ * Send direct message to a specific person via Slack Bot API
+ */
+export async function sendToSlackPerson(message, person) {
   const botToken = process.env.SLACK_BOT_TOKEN;
-  const iliasUserId = 'U09LPE3QR97'; // Ilias's Slack Member ID
 
   if (!botToken) {
     throw new Error('SLACK_BOT_TOKEN environment variable is required');
   }
 
-  console.log('📤 Sending DM to Ilias via Slack...');
+  console.log(`📤 Sending DM to ${person.name} via Slack...`);
 
   const response = await fetch('https://slack.com/api/chat.postMessage', {
     method: 'POST',
@@ -325,7 +374,7 @@ export async function sendToSlack(message) {
       'Authorization': `Bearer ${botToken}`
     },
     body: JSON.stringify({
-      channel: iliasUserId, // Sending to user ID creates a DM
+      channel: person.slackUserId, // Sending to user ID creates a DM
       text: message,
       unfurl_links: false,
       unfurl_media: false
@@ -335,25 +384,32 @@ export async function sendToSlack(message) {
   const result = await response.json();
 
   if (!result.ok) {
-    throw new Error(`Slack API failed: ${result.error}`);
+    throw new Error(`Slack API failed for ${person.name}: ${result.error}`);
   }
 
-  console.log('✅ DM sent to Ilias successfully!');
+  console.log(`✅ DM sent to ${person.name} successfully!`);
 }
 
 /**
- * Main function - run the full pipeline
+ * Send direct message to Ilias via Slack Bot API (backwards compatible)
  */
-export async function runDailyTweetSuggestions() {
-  console.log('\n🚀 Starting Daily Tweet Suggestions Pipeline\n');
+export async function sendToSlack(message) {
+  return sendToSlackPerson(message, TEAM_MEMBERS.ilias);
+}
+
+/**
+ * Run the full pipeline for a specific person
+ */
+export async function runDailyTweetSuggestionsForPerson(person) {
+  console.log(`\n🚀 Starting Daily Tweet Suggestions Pipeline for ${person.name}\n`);
   console.log('━'.repeat(50));
 
   try {
-    // Step 1: Fetch Ilias's data
-    const iliasData = await fetchIliasData();
+    // Step 1: Fetch person's data
+    const personData = await fetchPersonData(person);
 
     // Step 2: Analyze style
-    const styleProfile = analyzeStyle(iliasData.twitter.postCaptions);
+    const styleProfile = analyzeStyle(personData.twitter.postCaptions);
     console.log('📊 Style analysis complete:', {
       avgLength: styleProfile.avgLength,
       tone: styleProfile.tone,
@@ -361,25 +417,59 @@ export async function runDailyTweetSuggestions() {
     });
 
     // Step 3: Generate suggestions
-    const suggestions = await generateSuggestions(iliasData, styleProfile);
+    const suggestions = await generateSuggestionsForPerson(personData, styleProfile, person);
 
     if (!suggestions || suggestions.length === 0) {
-      throw new Error('No suggestions generated');
+      throw new Error(`No suggestions generated for ${person.name}`);
     }
 
     // Step 4: Format for Slack
-    const slackMessage = formatForSlack(suggestions, iliasData);
+    const slackMessage = formatForSlackPerson(suggestions, personData, person);
 
     // Step 5: Send to Slack
-    await sendToSlack(slackMessage);
+    await sendToSlackPerson(slackMessage, person);
 
     console.log('\n━'.repeat(50));
-    console.log('✅ Daily tweet suggestions sent successfully!\n');
+    console.log(`✅ Daily tweet suggestions sent to ${person.name} successfully!\n`);
 
-    return { success: true, suggestions };
+    return { success: true, person: person.name, suggestions };
 
   } catch (error) {
-    console.error('\n❌ Error in tweet suggestion pipeline:', error.message);
+    console.error(`\n❌ Error in tweet suggestion pipeline for ${person.name}:`, error.message);
     throw error;
   }
+}
+
+/**
+ * Run the full pipeline for all team members
+ */
+export async function runDailyTweetSuggestionsForAll() {
+  console.log('\n🚀 Starting Daily Tweet Suggestions Pipeline for ALL Team Members\n');
+  console.log('═'.repeat(60));
+
+  const results = [];
+  const errors = [];
+
+  for (const [key, person] of Object.entries(TEAM_MEMBERS)) {
+    try {
+      const result = await runDailyTweetSuggestionsForPerson(person);
+      results.push(result);
+    } catch (error) {
+      console.error(`Failed for ${person.name}:`, error.message);
+      errors.push({ person: person.name, error: error.message });
+    }
+  }
+
+  console.log('\n═'.repeat(60));
+  console.log(`✅ Completed: ${results.length} successful, ${errors.length} failed`);
+  console.log('═'.repeat(60));
+
+  return { results, errors };
+}
+
+/**
+ * Main function - run the full pipeline (backwards compatible - runs for all)
+ */
+export async function runDailyTweetSuggestions() {
+  return runDailyTweetSuggestionsForAll();
 }
