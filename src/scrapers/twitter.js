@@ -34,7 +34,7 @@ export async function scrapeTwitter() {
       console.log(`Scraping Twitter: @${account.handle}`);
 
       const data = await runActorWithRetry(ACTOR_ID, {
-        startUrls: [`https://twitter.com/${account.handle}`],
+        searchTerms: [`from:${account.handle} -filter:retweets`],
         maxItems: 50, // Get more tweets to filter by date
         addUserInfo: true,
       });
@@ -43,12 +43,16 @@ export async function scrapeTwitter() {
         // Get author info from first tweet
         const author = data[0]?.author || {};
 
-        // Filter tweets from the last 7 days
-        const recentTweets = data.filter(tweet =>
-          isWithinDays(tweet.createdAt || tweet.date || tweet.timestamp, DAYS_TO_SCRAPE)
-        );
+        // Filter tweets from the last 7 days, excluding retweets
+        const recentTweets = data.filter(tweet => {
+          if (!isWithinDays(tweet.createdAt || tweet.date || tweet.timestamp, DAYS_TO_SCRAPE)) return false;
+          // Exclude retweets
+          const text = tweet.fullText || tweet.text || '';
+          if (tweet.isRetweet || tweet.retweetedTweet || text.startsWith('RT @')) return false;
+          return true;
+        });
 
-        console.log(`  📅 Found ${recentTweets.length}/${data.length} tweets in last ${DAYS_TO_SCRAPE} days`);
+        console.log(`  📅 Found ${recentTweets.length}/${data.length} original tweets in last ${DAYS_TO_SCRAPE} days (retweets excluded)`);
 
         // Calculate totals from recent tweets
         let totalViews = 0;
