@@ -34,3 +34,4 @@ temp-twitter-tastemakers/
 
 # Lambda build artifacts
 lambda-package.zip
+get-google-token.js
