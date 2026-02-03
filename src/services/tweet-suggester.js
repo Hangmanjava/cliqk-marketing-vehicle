@@ -1,12 +1,14 @@
 /**
  * Tweet Suggester Service
- * Generates daily tweet suggestions based on style analysis
+ * Generates daily tweet/post suggestions based on style analysis
  * Supports multiple team members
+ * Pulls upcoming events from Luma calendar for event-based posts
  */
 
 import OpenAI from 'openai';
 
 const DASHBOARD_DATA_URL = 'https://www.cliqksocials.com/data.json';
+const LUMA_CALENDAR_URL = 'https://api2.luma.com/ics/get?entity=calendar&id=cal-TxFaacoX3utLK3Q';
 
 // Team member configurations
 export const TEAM_MEMBERS = {
@@ -15,8 +17,9 @@ export const TEAM_MEMBERS = {
     twitterHandle: 'iliasanwar_',
     slackUserId: 'U09LPE3QR97',
     role: 'Co-Founder and CMO of Cliqk',
-    topics: ['distribution', 'creators', 'growth', 'content', 'marketing'],
-    context: 'He runs Cliqk (social media analytics for creators). Building in public, growing Cliqk. Audience: creators, founders, marketers.'
+    topics: ['distribution', 'creators', 'growth', 'content', 'marketing', 'community', 'events', 'founder life'],
+    context: 'He runs Cliqk (social media analytics for creators). Building in public, growing Cliqk. Hosts founder events and breakfast clubs in NYC. Audience: creators, founders, marketers. He writes long-form, story-driven posts on X - personal updates, founder reflections, and event promotions.',
+    lumaCalendarUrl: LUMA_CALENDAR_URL
   },
   rohan: {
     name: 'Rohan',
@@ -86,18 +89,98 @@ export async function fetchIliasData() {
 }
 
 /**
+ * Fetch upcoming events from Luma calendar
+ */
+export async function fetchLumaEvents(person) {
+  if (!person.lumaCalendarUrl) {
+    return [];
+  }
+
+  console.log(`📅 Fetching Luma events for ${person.name}...`);
+
+  try {
+    const response = await fetch(person.lumaCalendarUrl);
+    if (!response.ok) {
+      console.log('⚠️ Could not fetch Luma calendar, skipping events');
+      return [];
+    }
+
+    const icsText = await response.text();
+    const events = parseICSEvents(icsText);
+
+    // Filter to upcoming events (next 30 days)
+    const now = new Date();
+    const thirtyDaysOut = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+    const upcoming = events
+      .filter(e => e.date >= now && e.date <= thirtyDaysOut)
+      .sort((a, b) => a.date - b.date);
+
+    console.log(`✅ Found ${upcoming.length} upcoming events in next 30 days`);
+    return upcoming;
+  } catch (e) {
+    console.log('⚠️ Error fetching Luma events:', e.message);
+    return [];
+  }
+}
+
+/**
+ * Parse ICS calendar text into event objects
+ */
+function parseICSEvents(icsText) {
+  const events = [];
+  const eventBlocks = icsText.split('BEGIN:VEVENT');
+
+  for (let i = 1; i < eventBlocks.length; i++) {
+    const block = eventBlocks[i].split('END:VEVENT')[0];
+
+    const summary = block.match(/SUMMARY:(.*)/)?.[1]?.trim() || '';
+    const dtstart = block.match(/DTSTART[^:]*:(.*)/)?.[1]?.trim() || '';
+    const location = block.match(/LOCATION:(.*)/)?.[1]?.trim() || '';
+    const description = block.match(/DESCRIPTION:(.*?)(?=\r?\n[A-Z])/s)?.[1]?.trim() || '';
+    const url = block.match(/URL:(.*)/)?.[1]?.trim() || '';
+
+    let date = null;
+    if (dtstart) {
+      // Parse YYYYMMDDTHHMMSSZ or YYYYMMDD format
+      const cleaned = dtstart.replace(/[^0-9T]/g, '');
+      if (cleaned.length >= 8) {
+        const year = cleaned.substring(0, 4);
+        const month = cleaned.substring(4, 6);
+        const day = cleaned.substring(6, 8);
+        const hour = cleaned.length >= 11 ? cleaned.substring(9, 11) : '00';
+        const min = cleaned.length >= 13 ? cleaned.substring(11, 13) : '00';
+        date = new Date(`${year}-${month}-${day}T${hour}:${min}:00Z`);
+      }
+    }
+
+    if (summary && date && !isNaN(date.getTime())) {
+      events.push({
+        name: summary,
+        date,
+        location: location.replace(/\\,/g, ',').replace(/\\n/g, ' '),
+        description: description.replace(/\\n/g, '\n').replace(/\\,/g, ',').substring(0, 300),
+        url
+      });
+    }
+  }
+
+  return events;
+}
+
+/**
  * Analyze tweet style patterns
  */
 export function analyzeStyle(tweets) {
   if (!tweets || tweets.length === 0) {
     return {
-      avgLength: 240,
+      avgLength: 800,
       usesHashtags: false,
-      usesEmojis: false,
+      usesEmojis: true,
       usesQuestions: false,
       usesLinks: true,
-      tone: 'professional',
-      topics: ['distribution', 'creators', 'growth']
+      tone: 'conversational',
+      topics: ['distribution', 'creators', 'growth', 'community', 'events']
     };
   }
 
@@ -202,66 +285,133 @@ async function fetchCurrentContext() {
 }
 
 /**
- * Generate 5 tweet suggestions using OpenAI for a specific person
+ * Generate 5 tweet/post suggestions using OpenAI for a specific person
  */
 export async function generateSuggestionsForPerson(personData, styleProfile, person) {
-  console.log(`🤖 Generating tweet suggestions for ${person.name} with AI...`);
+  console.log(`🤖 Generating post suggestions for ${person.name} with AI...`);
 
   const openai = getOpenAIClient();
   const currentContext = await fetchCurrentContext();
 
-  const recentTweets = personData.twitter.postCaptions?.slice(0, 10).join('\n\n') || 'No recent tweets available';
+  // Fetch upcoming Luma events if available
+  const upcomingEvents = await fetchLumaEvents(person);
+  const eventsContext = upcomingEvents.length > 0
+    ? upcomingEvents.map(e => {
+        const dateStr = e.date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+        return `- "${e.name}" on ${dateStr}${e.location ? ` at ${e.location}` : ''}${e.url ? ` (${e.url})` : ''}`;
+      }).join('\n')
+    : 'No upcoming events found';
 
-  const prompt = `You are ghostwriting tweets for ${person.name} (@${person.twitterHandle}), ${person.role}.
+  const recentTweets = personData.twitter.postCaptions?.slice(0, 10).join('\n\n---\n\n') || 'No recent tweets available';
 
-## CRITICAL: Sound like ${person.name}, NOT like AI
-- NO generic motivational fluff ("unlock your potential", "game-changer", "here's the thing")
-- NO numbered lists or "Thread 🧵" formats unless they actually use them
-- NO excessive emojis or hashtags
-- Write like a real person texting a friend about business
-- Be specific, not vague. Use real numbers, real examples, real observations.
+  const prompt = `You are ghostwriting long-form X (Twitter) posts for ${person.name} (@${person.twitterHandle}), ${person.role}.
 
-## ${person.name}'s ACTUAL recent tweets (copy their exact voice):
+## WRITING STYLE - THIS IS CRITICAL
+
+These are NOT short tweets. These are long-form X posts. Study these two real examples of the EXACT style to replicate:
+
+### EXAMPLE 1 - Personal Update / Founder Story:
+"""
+Little update:
+
+3-months ago me + @sharifshameem wanted to do a simple experiment: build something together for 12 weeks, see if we liked working together, and if it felt right we'd go big and start a real company.
+
+We built Tidbit, a new interface for Claude that focused on collaboration.
+
+It went well. Got to revenue, paying teams, distribution on TikTok, all the good stuff.
+
+3-months later:
+
+We're not continuing with it, and are deciding to go our separate ways.
+
+Not much drama. We really, really enjoyed working together. We proved we can ship fast and create momentum. It was a 10/10 time.
+
+But we also learned this specific problem set (even though it is quite lucrative) isn't the one that gets either of us out of bed excited every morning.
+
+We both have the personality where we could "force" obsession out of ourselves, but, just didn't feel right in this case.
+
+And, in all honesty as individuals we're not super sure which problem sets we want to go after next.
+
+So we're both taking some time, thinking, and going our separate directions for now. If we both feel a desire to work on the same problem set, we'll join forces again!
+
+Overall, no regrets.
+
+Last 3-months were magical. And it was cool to do it all alongside one of my best friends ❤️
+"""
+
+### EXAMPLE 2 - Event Promotion:
+"""
+We host a founder breakfast club every month
+
+I don't say this combination of words often, but it is what I describe as an 'insanely awesome vibe.'
+
+We invite ambitious founders across all disciplines:
+
+- a Harvard alum turned pro bodybuilding turned founder
+- a pro MLB player (Seattle Mariners) turned founder
+- possibly the most well-connected person in the creator economy in the world
+- Harvard phd building "AI computational drug discovery via cloud-native computing chemistry workflows" (Im too dumb to know what this means)
+- 3x Ironman turned founder, now building agentic AI for women's health
+ ... and many more
+
+Our last one was on Friday with @rhobusiness & @thoropass  (we love them)
+
+Four investors managed to sneak in too. See if you can spot them in the pics
+
+Next one on Feb 26. DM me or see link below.
+"""
+
+## KEY STYLE RULES:
+1. **LONG-FORM**: Each post should be 500-1500 characters. Multiple paragraphs. NOT short tweets.
+2. **Line breaks between paragraphs** - lots of whitespace, easy to scan
+3. **Conversational and personal** - like texting a friend, not writing a LinkedIn post
+4. **Storytelling structure** - hook at top, story/details in middle, reflection or CTA at end
+5. **Specific details** - real names, @handles, specific descriptions of people, concrete numbers
+6. **Bullet points with dashes** for lists (not numbered lists)
+7. **Sparse emoji** - 0-2 max, usually one at the very end (❤️ or similar)
+8. **Self-deprecating humor** is good ("Im too dumb to know what this means")
+9. **Honest and vulnerable** - share real feelings, not just wins
+10. **NO hashtags, NO "Thread 🧵", NO generic motivational fluff**
+11. **NO AI-sounding phrases** like "game-changer", "unlock", "here's the thing", "let me tell you"
+
+## ${person.name}'s ACTUAL recent posts (study their voice):
 ${recentTweets}
 
-## Their style patterns:
-- Length: AIM FOR 200-280 CHARACTERS. Develop the thought fully, don't be too brief.
-- Tone: ${styleProfile.tone}, direct, no fluff
-- Topics: ${styleProfile.topics.join(', ') || person.topics.join(', ')}
+## ${person.name}'s context:
 - ${person.context}
-- ${styleProfile.usesEmojis ? 'Sometimes uses emojis' : 'Rarely uses emojis'}
-- ${styleProfile.usesHashtags ? 'Sometimes uses hashtags' : 'Almost never uses hashtags'}
+- Topics: ${styleProfile.topics.join(', ') || person.topics.join(', ')}
+- ${personData.twitter.followers?.toLocaleString() || '~1K'} followers
+- ${styleProfile.usesEmojis ? 'Sometimes uses emojis (sparingly)' : 'Rarely uses emojis'}
 
-## Current events to potentially reference:
+## Current events/trends:
 ${currentContext}
 
-## Their account context:
-- ${personData.twitter.followers?.toLocaleString() || '~1K'} followers, ${personData.twitter.impressions?.toLocaleString() || '50K+'} impressions
-- Building in public
-- Audience: founders, builders, tech enthusiasts
+## Upcoming events from ${person.name}'s Luma calendar:
+${eventsContext}
 
-## Generate 5 tweets that sound EXACTLY like ${person.name} wrote them:
+## Generate 5 LONG-FORM posts that sound EXACTLY like ${person.name}:
 
-1. **Contrarian take** - Challenge something everyone believes about content/social/tech
-2. **Specific insight** - Something they noticed from data or their own experience (make up a believable specific stat)
-3. **Question** - Genuine question they'd ask their audience (not engagement bait)
-4. **Real observation** - Something happening right now in tech/creator space
-5. **Personal update style** - How they'd share a win or learning
+1. **Personal Update / Founder Story** - Share a real-feeling update about building Cliqk, a lesson learned, a decision made, a pivot, a reflection. Multi-paragraph, honest, vulnerable. (Like Example 1 above)
+2. **Event Promotion** - Promote an upcoming event from the Luma calendar (or a recurring event like breakfast club). Describe the types of people who attend with specific, colorful bullet points. Include a CTA. (Like Example 2 above)
+3. **Contrarian / Hot Take** - Challenge a common belief in the creator/founder space. But do it in a long-form, thoughtful way with a story or specific example backing it up. Not just a one-liner.
+4. **Behind the Scenes / Building in Public** - Share something specific about what's happening at Cliqk right now - a metric, a feature, a customer interaction, a team moment. Make it feel real and unpolished.
+5. **Community / Relationships** - A post about the people around ${person.name} - co-founders, other founders, community members. Celebrate someone, share a story about a connection, or reflect on the value of community.
 
-IMPORTANT:
-- Each tweet must sound like it came from their keyboard, not ChatGPT
-- Reference specific things (platforms, features, numbers) not vague concepts
-- If you can't tell it apart from their real tweets, you did it right
-- TWEETS MUST BE 200-280 CHARACTERS. Short tweets under 150 chars are rejected. Develop the idea fully.
+CRITICAL REQUIREMENTS:
+- EVERY post MUST be 500-1500 characters. Posts under 400 characters are REJECTED.
+- Use multiple paragraphs with line breaks between them
+- Include specific details, names, @handles where natural
+- Sound human and personal, NOT like AI generated content
+- For the Event Promotion post: USE THE ACTUAL UPCOMING EVENTS from the Luma calendar data above
 
 ## Output JSON:
 {
   "suggestions": [
     {
-      "type": "Contrarian Take",
-      "tweet": "exact tweet text",
-      "why": "why this matches their style and would perform",
-      "charCount": 123
+      "type": "Personal Update",
+      "tweet": "full post text with line breaks using actual newline characters",
+      "why": "why this would resonate with their audience",
+      "charCount": 850
     }
   ]
 }`;
@@ -271,21 +421,21 @@ IMPORTANT:
     messages: [
       {
         role: 'system',
-        content: 'You are an expert Twitter ghostwriter. Always respond with valid JSON matching the requested format.'
+        content: 'You are an expert X/Twitter ghostwriter specializing in long-form, story-driven posts for founders. Always respond with valid JSON matching the requested format. Every post must be multi-paragraph and 500-1500 characters.'
       },
       {
         role: 'user',
         content: prompt
       }
     ],
-    temperature: 0.8,
-    max_tokens: 2000,
+    temperature: 0.85,
+    max_tokens: 6000,
     response_format: { type: 'json_object' }
   });
 
   const result = JSON.parse(response.choices[0].message.content);
 
-  console.log(`✅ Generated ${result.suggestions?.length || 0} tweet suggestions`);
+  console.log(`✅ Generated ${result.suggestions?.length || 0} post suggestions`);
 
   return result.suggestions || [];
 }
@@ -313,8 +463,17 @@ export function formatForSlackPerson(suggestions, personData, person) {
   });
 
   const typeEmojis = {
-    'Hot Take': '🔥',
+    'Personal Update': '📝',
+    'Personal Update / Founder Story': '📝',
+    'Event Promotion': '🎪',
     'Contrarian Take': '🔥',
+    'Contrarian / Hot Take': '🔥',
+    'Hot Take': '🔥',
+    'Behind the Scenes': '🛠️',
+    'Behind the Scenes / Building in Public': '🛠️',
+    'Building in Public': '🛠️',
+    'Community / Relationships': '🤝',
+    'Community': '🤝',
     'Value Tip': '💡',
     'Specific Insight': '💡',
     'Engagement Hook': '💬',
@@ -325,9 +484,9 @@ export function formatForSlackPerson(suggestions, personData, person) {
     'Personal Update Style': '✨'
   };
 
-  let message = `*🐦 Daily Tweet Suggestions for @${person.twitterHandle}*\n`;
+  let message = `*📝 Daily Post Suggestions for @${person.twitterHandle}*\n`;
   message += `_Generated: ${dateStr} ET_\n`;
-  message += `_Based on ${personData.twitter.postCaptions?.length || 0} recent tweets_\n\n`;
+  message += `_Based on ${personData.twitter.postCaptions?.length || 0} recent posts + Luma events_\n\n`;
   message += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
   suggestions.forEach((suggestion, index) => {
@@ -343,7 +502,7 @@ export function formatForSlackPerson(suggestions, personData, person) {
   });
 
   message += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-  message += `_Copy any tweet above and post to X/Twitter!_`;
+  message += `_Copy any post above and share on X!_`;
 
   return message;
 }
@@ -401,7 +560,7 @@ export async function sendToSlack(message) {
  * Run the full pipeline for a specific person
  */
 export async function runDailyTweetSuggestionsForPerson(person) {
-  console.log(`\n🚀 Starting Daily Tweet Suggestions Pipeline for ${person.name}\n`);
+  console.log(`\n🚀 Starting Daily Post Suggestions Pipeline for ${person.name}\n`);
   console.log('━'.repeat(50));
 
   try {
@@ -423,6 +582,12 @@ export async function runDailyTweetSuggestionsForPerson(person) {
       throw new Error(`No suggestions generated for ${person.name}`);
     }
 
+    // Log character counts to verify long-form output
+    suggestions.forEach((s, i) => {
+      const len = s.tweet?.length || 0;
+      console.log(`  Post ${i + 1} (${s.type}): ${len} chars ${len < 400 ? '⚠️ SHORT' : '✅'}`);
+    });
+
     // Step 4: Format for Slack
     const slackMessage = formatForSlackPerson(suggestions, personData, person);
 
@@ -430,7 +595,7 @@ export async function runDailyTweetSuggestionsForPerson(person) {
     await sendToSlackPerson(slackMessage, person);
 
     console.log('\n━'.repeat(50));
-    console.log(`✅ Daily tweet suggestions sent to ${person.name} successfully!\n`);
+    console.log(`✅ Daily post suggestions sent to ${person.name} successfully!\n`);
 
     return { success: true, person: person.name, suggestions };
 
@@ -444,7 +609,7 @@ export async function runDailyTweetSuggestionsForPerson(person) {
  * Run the full pipeline for all team members
  */
 export async function runDailyTweetSuggestionsForAll() {
-  console.log('\n🚀 Starting Daily Tweet Suggestions Pipeline for ALL Team Members\n');
+  console.log('\n🚀 Starting Daily Post Suggestions Pipeline for ALL Team Members\n');
   console.log('═'.repeat(60));
 
   const results = [];
